@@ -66,10 +66,14 @@ function getHeaderRow(rows: string[][], headerRow?: number): string[] {
 function extractFooterFromRows(
   rows: string[][],
   patterns: import("@/types").FooterPattern[],
-  scanFromBottom = 15
+  scanFromBottom = 15,
+  scanFromTop?: number
 ): Partial<Record<OrderField, string>> {
   const footer: Partial<Record<OrderField, string>> = {};
-  const tail = rows.slice(Math.max(0, rows.length - scanFromBottom));
+  const tail =
+    scanFromTop != null
+      ? rows.slice(0, scanFromTop)
+      : rows.slice(Math.max(0, rows.length - scanFromBottom));
   const flat = tail.map((r) => r.join(" ")).join("\n");
 
   for (const p of patterns) {
@@ -143,7 +147,8 @@ function applyStep(
         ...extractFooterFromRows(
           sourceRows,
           step.patterns,
-          step.scanFromBottom
+          step.scanFromBottom,
+          step.scanFromTop
         ),
       };
       break;
@@ -217,7 +222,12 @@ function applyStep(
       for (const row of state.rows) {
         const line = row.join(" ");
         if (matchPattern(line, step.startMarker)) {
-          if (current.length) cards.push(current);
+          if (
+            current.length &&
+            matchPattern(current[0]?.join(" ") ?? "", step.startMarker)
+          ) {
+            cards.push(current);
+          }
           current = [row];
         } else if (step.endMarker && matchPattern(line, step.endMarker)) {
           current.push(row);

@@ -64,7 +64,13 @@ export type RuleStep =
   | { type: "skipRows"; count: number }
   | { type: "skipUntilMatch"; pattern: string; maxScan?: number }
   | { type: "extractTable"; headerRow?: number; endMarker?: string; skipPatterns?: string[] }
-  | { type: "extractFooter"; patterns: FooterPattern[]; scanFromBottom?: number }
+  | {
+      type: "extractFooter";
+      patterns: FooterPattern[];
+      scanFromBottom?: number;
+      /** 卡片式：收货信息在卡片顶部时使用 */
+      scanFromTop?: number;
+    }
   | { type: "groupBy"; keyField: string; inheritFields: string[] }
   | {
       type: "matrixTranspose";

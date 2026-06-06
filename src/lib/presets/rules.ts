@@ -131,40 +131,94 @@ export const PRESET_RULES: Array<{
   },
   {
     name: "卡片式调拨单",
-    description: "适用：▶ 调拨记录 卡片边界 + 内部小表",
+    description:
+      "适用：▶ 调拨记录 #N 卡片边界 + 顶部收货信息 + 4 列物品小表（编码/名称/规格/数量）",
     config: {
       fileTypes: ["xlsx", "xls"],
       steps: [
         {
+          type: "extractFooter",
+          scanFromTop: 8,
+          patterns: [
+            {
+              field: "externalCode",
+              labelPattern: "调拨单号[：:\\s]*(\\S+)",
+              valueGroup: 1,
+            },
+          ],
+        },
+        {
           type: "cardSplit",
-          startMarker: "▶\\s*调拨记录",
-          endMarker: "─{3,}",
+          startMarker: "▶\\s*调拨记录\\s*#?\\d*",
+          endMarker: "─{3,}|^合计",
           innerSteps: [
-            { type: "skipUntilMatch", pattern: "物品编码|SKU|编码", maxScan: 20 },
-            { type: "extractTable", headerRow: 0 },
             {
               type: "extractFooter",
+              scanFromTop: 6,
               patterns: [
-                { field: "storeName", labelPattern: "收货门店[：:\\s]*(.+)", valueGroup: 1 },
-                { field: "recipientName", labelPattern: "收件人[：:\\s]*(\\S+)", valueGroup: 1 },
-                { field: "recipientPhone", labelPattern: "电话[：:\\s]*(\\d[\\d\\-+]+)", valueGroup: 1 },
-                { field: "recipientAddress", labelPattern: "地址[：:\\s]*(.+)", valueGroup: 1 },
+                {
+                  field: "storeName",
+                  labelPattern: "调入门店[：:\\s]*(.+?)(?=\\s+收货人|\\s+电话|$)",
+                  valueGroup: 1,
+                },
+                {
+                  field: "storeName",
+                  labelPattern: "调入门店[：:\\s]*(.+)",
+                  valueGroup: 1,
+                },
+                {
+                  field: "recipientName",
+                  labelPattern: "收货人[：:\\s]*(\\S+)",
+                  valueGroup: 1,
+                },
+                {
+                  field: "recipientPhone",
+                  labelPattern: "电话[：:\\s]*(\\d[\\d\\-+]+)",
+                  valueGroup: 1,
+                },
+                {
+                  field: "recipientAddress",
+                  labelPattern: "收货地址[：:\\s]*(.+)",
+                  valueGroup: 1,
+                },
               ],
-              scanFromBottom: 15,
+            },
+            {
+              type: "skipUntilMatch",
+              pattern: "物品编码|SKU编码|编码",
+              maxScan: 15,
+            },
+            {
+              type: "extractTable",
+              headerRow: 0,
+              skipPatterns: ["合计", "调拨记录", "─"],
+            },
+            {
+              type: "filterRows",
+              skipPatterns: ["合计", "物品编码", "编码"],
+              skipEmptySku: true,
             },
             {
               type: "mapFields",
               mappings: [
-                { target: "skuCode", source: 0, transform: "trim" },
-                { target: "skuName", source: 1, transform: "trim" },
-                { target: "skuQuantity", source: 2, transform: "number" },
+                { target: "externalCode", source: "footer", footerField: "externalCode" },
                 { target: "storeName", source: "footer", footerField: "storeName" },
                 { target: "recipientName", source: "footer", footerField: "recipientName" },
                 { target: "recipientPhone", source: "footer", footerField: "recipientPhone", transform: "phone" },
                 { target: "recipientAddress", source: "footer", footerField: "recipientAddress" },
+                { target: "skuCode", source: 0, transform: "trim" },
+                { target: "skuName", source: 1, transform: "trim" },
+                { target: "skuSpec", source: 2, transform: "trim" },
+                { target: "skuQuantity", source: 3, transform: "number" },
               ],
             },
+            { type: "setDefaults", defaults: { tempLayer: "常温", weight: "1" } },
           ],
+        },
+        {
+          type: "filterRows",
+          skipPatterns: ["合计", "物品编码"],
+          skipEmptySku: true,
         },
       ],
     },
