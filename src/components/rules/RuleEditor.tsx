@@ -149,12 +149,13 @@ export function RuleEditor({
         const detected = isPdfText
           ? detectPdfDeliveryTable(previewData.text!)
           : null;
+        const zbwpHits = (previewData.text!.match(/ZBWP[\s-]*\d+/gi) ?? []).length;
         const hint =
           isPdfText && detected?.hasTable
-            ? `试解析仍为空：已识别 ${detected.zbwpRows} 条 ZBWP 物品行，请对照下方预处理后的 PDF 文本`
-            : isPdfText && /ZBWP[\s-]*\d/i.test(previewData.text!)
-              ? "试解析仍为空：PDF 中含 ZBWP 编码但未能解析为物品行，请对照下方预处理文本（支持 4 列或 7 列）"
-              : "试解析结果为空，请对照下方 PDF 原文检查每行列数是否与正则一致";
+            ? `试解析仍为空：预处理已识别 ${detected.zbwpRows} 条物品行，请刷新页面后重试（需最新部署）`
+            : isPdfText && zbwpHits > 0
+              ? `试解析仍为空：PDF 含 ${zbwpHits} 处 ZBWP 编码，预处理未还原为物品行。请 Ctrl+F5 强刷后重试，并对照下方预处理文本`
+              : "试解析结果为空，请对照下方 PDF 原文检查规则配置";
         toast.warning(
           warnings.length > 1 ? `试解析为空：${warnings.slice(0, 2).join("；")}` : hint
         );

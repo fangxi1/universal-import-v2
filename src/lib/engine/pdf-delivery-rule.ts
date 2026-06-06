@@ -395,9 +395,10 @@ function parseZbwpTokenWindow(
 
 /** 全局扫描 ZBWP 物品行（单行多物品、名称含空格等） */
 export function scanPdfDeliveryItems(
-  text: string
+  text: string,
+  alreadyPrepared = false
 ): Partial<Record<OrderField, string>>[] {
-  const prepared = preparePdfTextForParsing(text);
+  const prepared = alreadyPrepared ? text : preparePdfTextForParsing(text);
   const items: Partial<Record<OrderField, string>>[] = [];
   const seen = new Set<string>();
 

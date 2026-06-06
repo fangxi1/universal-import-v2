@@ -269,6 +269,30 @@ function applyStep(
       if (state.text) {
         state.text = preparePdfTextForParsing(state.text);
       }
+
+      const extractPdfMeta = (text: string) => {
+        const rec = createEmptyOrderRow("");
+        for (const line of text.split("\n")) {
+          const trimmed = stripPdfItemLineFooter(line.trim());
+          if (!trimmed) continue;
+          for (const lp of step.linePatterns) {
+            if (lp.isItemLine || !lp.field) continue;
+            const m = matchPattern(trimmed, lp.pattern);
+            if (m) rec[lp.field] = trimCell(m[1] ?? m[0]);
+          }
+        }
+        return rec;
+      };
+
+      if (/ZBWP/i.test(state.text)) {
+        const scanned = scanPdfDeliveryItems(state.text, true);
+        if (scanned.length > 0) {
+          const meta = extractPdfMeta(state.text);
+          state.records = scanned.map((item) => ({ ...meta, ...item }));
+          break;
+        }
+      }
+
       const blocks = state.text.split(new RegExp(step.blockSeparator, "m"));
       const records: Partial<Record<OrderField, string>>[] = [];
       const globalMeta = createEmptyOrderRow("");
@@ -318,7 +342,7 @@ function applyStep(
         }
 
         if (items.length === 0 && /ZBWP/i.test(block)) {
-          items.push(...scanPdfDeliveryItems(block));
+          items.push(...scanPdfDeliveryItems(block, true));
         }
 
         for (const key of Object.keys(rec) as OrderField[]) {
