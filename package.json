@@ -1,0 +1,49 @@
+{
+  "name": "universal-import-v2",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "db:push": "drizzle-kit push",
+    "db:generate": "drizzle-kit generate",
+    "vercel:link": "vercel link",
+    "vercel:env": "vercel env pull .env.local",
+    "vercel:deploy": "vercel --prod",
+    "test:presets": "npx --yes tsx scripts/verify-presets.ts",
+    "test:demos": "npx --yes tsx scripts/verify-demos.ts",
+    "test:pdf": "npx --yes tsx scripts/test-pdf-rule.ts",
+    "test:perf": "npx --yes tsx scripts/benchmark-perf.ts",
+    "benchmark:excel": "npx --yes tsx scripts/generate-benchmark-1000.ts"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "^1.1.0",
+    "@tanstack/react-virtual": "^3.13.12",
+    "drizzle-orm": "^0.44.2",
+    "mammoth": "^1.9.1",
+    "next": "^15.3.3",
+    "pdf-parse": "^1.1.1",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "sonner": "^2.0.5",
+    "uuid": "^11.1.0",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3.3.1",
+    "@tailwindcss/postcss": "^4.1.8",
+    "@types/node": "^22.15.29",
+    "@types/pdf-parse": "^1.1.5",
+    "@types/react": "^19.1.6",
+    "@types/react-dom": "^19.1.5",
+    "@types/uuid": "^10.0.0",
+    "drizzle-kit": "^0.31.1",
+    "eslint": "^9.28.0",
+    "eslint-config-next": "^15.3.3",
+    "tailwindcss": "^4.1.8",
+    "typescript": "^5.8.3",
+    "vercel": "^54.9.1"
+  }
+}
