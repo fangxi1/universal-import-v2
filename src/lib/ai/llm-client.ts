@@ -5,6 +5,10 @@ import type {
   ParseRuleConfig,
 } from "@/types";
 import {
+  buildCardTransferRuleFromData,
+  detectCardTransferSheet,
+} from "@/lib/engine/card-transfer-rule";
+import {
   buildPdfRuleFromText,
 } from "@/lib/engine/pdf-delivery-rule";
 
@@ -136,6 +140,12 @@ export async function callLlmForRule(
       parsed.analysis = detected.analysis;
       parsed.confidence = detected.confidence;
       parsed.guessedMappings = detected.guessedMappings;
+    } else if (parsed.config && data.sheets?.length && detectCardTransferSheet(data).isCard) {
+      const detected = buildCardTransferRuleFromData(data);
+      parsed.config = detected.config;
+      parsed.analysis = detected.analysis;
+      parsed.confidence = detected.confidence;
+      parsed.guessedMappings = detected.guessedMappings;
     }
     return parsed;
   } catch (e) {
@@ -204,6 +214,19 @@ function generateFallbackRule(data: FilePreviewData, fileName: string): AiGenera
       analysis: pdfRule.analysis,
       confidence: pdfRule.confidence,
     };
+  }
+
+  if (data.sheets?.length) {
+    const cardDetected = detectCardTransferSheet(data);
+    if (cardDetected.isCard) {
+      const cardRule = buildCardTransferRuleFromData(data);
+      return {
+        config: cardRule.config,
+        guessedMappings: cardRule.guessedMappings,
+        analysis: cardRule.analysis,
+        confidence: cardRule.confidence,
+      };
+    }
   }
 
   const sheet = data.sheets?.[0];

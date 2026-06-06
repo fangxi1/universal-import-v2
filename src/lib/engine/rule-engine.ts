@@ -77,6 +77,7 @@ function extractFooterFromRows(
   const flat = tail.map((r) => r.join(" ")).join("\n");
 
   for (const p of patterns) {
+    if (footer[p.field]?.trim()) continue;
     const m = matchPattern(flat, p.labelPattern);
     if (m) {
       const group = p.valueGroup ?? 1;
@@ -87,16 +88,66 @@ function extractFooterFromRows(
   for (const row of tail) {
     const line = row.join(" ");
     for (const p of patterns) {
-      if (footer[p.field]) continue;
+      if (footer[p.field]?.trim()) continue;
       const m = matchPattern(line, p.labelPattern);
       if (m) {
         const group = p.valueGroup ?? 1;
         footer[p.field] = trimCell(m[group] ?? m[0]);
       }
     }
+
+    for (let i = 0; i < row.length; i++) {
+      const label = trimCell(row[i]);
+      if (!label) continue;
+
+      const colonVal = label.match(
+        /^(调入门店|收货人|电话|收货地址|调拨单号)[：:\s]+(.+)$/
+      );
+      if (colonVal) {
+        assignFooterLabel(footer, colonVal[1], colonVal[2]);
+        continue;
+      }
+
+      const next = trimCell(row[i + 1] ?? "");
+      if (!next) continue;
+      if (label === "调入门店" || label.startsWith("调入门店")) {
+        assignFooterLabel(footer, "调入门店", next);
+        i++;
+      } else if (label === "收货人" || label.startsWith("收货人")) {
+        assignFooterLabel(footer, "收货人", next);
+        i++;
+      } else if (label === "电话" || label.startsWith("电话")) {
+        assignFooterLabel(footer, "电话", next);
+        i++;
+      } else if (label === "收货地址" || label.startsWith("收货地址")) {
+        assignFooterLabel(footer, "收货地址", next);
+        i++;
+      } else if (label === "调拨单号" || label.startsWith("调拨单号")) {
+        assignFooterLabel(footer, "调拨单号", next);
+        i++;
+      }
+    }
   }
 
   return footer;
+}
+
+function assignFooterLabel(
+  footer: Partial<Record<OrderField, string>>,
+  label: string,
+  value: string
+) {
+  const v = trimCell(value);
+  if (!v) return;
+  if (/调入门店/.test(label) && !footer.storeName?.trim()) footer.storeName = v;
+  else if (/收货人/.test(label) && !footer.recipientName?.trim())
+    footer.recipientName = v;
+  else if (/电话/.test(label) && !footer.recipientPhone?.trim())
+    footer.recipientPhone = v;
+  else if (/收货地址|^地址/.test(label) && !footer.recipientAddress?.trim())
+    footer.recipientAddress = v;
+  else if (/调拨单号/.test(label) && !footer.externalCode?.trim())
+    footer.externalCode = v;
 }
 
 function applyStep(

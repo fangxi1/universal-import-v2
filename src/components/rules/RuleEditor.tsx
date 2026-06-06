@@ -5,6 +5,11 @@ import type { AiGeneratedRule, ParseRuleConfig, ParseRuleRecord } from "@/types"
 import { Button, toast } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import {
+  buildCardTransferRuleFromData,
+  detectCardTransferSheet,
+  sanitizeCardTransferRuleConfig,
+} from "@/lib/engine/card-transfer-rule";
+import {
   detectPdfDeliveryTable,
   preparePdfTextForParsing,
   sanitizePdfRuleConfig,
@@ -130,11 +135,24 @@ export function RuleEditor({
     try {
       const isPdfText =
         Boolean(previewData.text?.trim()) && !previewData.sheets?.length;
+      const isCardSheet =
+        Boolean(previewData.sheets?.length) &&
+        detectCardTransferSheet(previewData).isCard;
+
       if (isPdfText) {
         const sanitized = sanitizePdfRuleConfig(config, previewData.text);
         config = sanitized;
         if (JSON.stringify(sanitized) !== JSON.stringify(parseConfig())) {
           setConfigJson(JSON.stringify(config, null, 2));
+        }
+      } else if (isCardSheet) {
+        const sanitized = sanitizeCardTransferRuleConfig(config, previewData);
+        config = sanitized;
+        if (JSON.stringify(sanitized) !== JSON.stringify(parseConfig())) {
+          setConfigJson(JSON.stringify(config, null, 2));
+          toast.info("已自动更新为卡片式调拨单规则（▶ 调拨记录 #N）", {
+            duration: 5000,
+          });
         }
       }
 
@@ -149,13 +167,17 @@ export function RuleEditor({
         const detected = isPdfText
           ? detectPdfDeliveryTable(previewData.text!)
           : null;
-        const zbwpHits = (previewData.text!.match(/ZBWP[\s-]*\d+/gi) ?? []).length;
+        const zbwpHits = isPdfText
+          ? (previewData.text!.match(/ZBWP[\s-]*\d+/gi) ?? []).length
+          : 0;
         const hint =
           isPdfText && detected?.hasTable
             ? `试解析仍为空：预处理已识别 ${detected.zbwpRows} 条物品行，请刷新页面后重试（需最新部署）`
             : isPdfText && zbwpHits > 0
               ? `试解析仍为空：PDF 含 ${zbwpHits} 处 ZBWP 编码，预处理未还原为物品行。请 Ctrl+F5 强刷后重试，并对照下方预处理文本`
-              : "试解析结果为空，请对照下方 PDF 原文检查规则配置";
+              : isCardSheet
+                ? "试解析仍为空：请确认文件含「▶ 调拨记录 #N」卡片行，且每张卡片内有物品编码/名称/规格/数量表"
+                : "试解析结果为空，请对照文件结构检查规则配置";
         toast.warning(
           warnings.length > 1 ? `试解析为空：${warnings.slice(0, 2).join("；")}` : hint
         );

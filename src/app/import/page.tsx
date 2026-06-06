@@ -19,6 +19,7 @@ import {
   type FileMeta,
 } from "@/lib/engine/import-utils";
 import { executeRuleEngineAsync } from "@/lib/engine/rule-engine";
+import { sanitizeCardTransferRuleConfig, detectCardTransferSheet } from "@/lib/engine/card-transfer-rule";
 import { sanitizePdfRuleConfig } from "@/lib/engine/pdf-delivery-rule";
 import { PerfTimer, type ImportPerfMetrics } from "@/lib/performance/timing";
 import {
@@ -303,6 +304,8 @@ export default function ImportPage() {
       let parseConfig = rule.config as ParseRuleConfig;
       if (previewData.text?.trim() && !previewData.sheets?.length) {
         parseConfig = sanitizePdfRuleConfig(parseConfig, previewData.text);
+      } else if (previewData.sheets?.length && detectCardTransferSheet(previewData).isCard) {
+        parseConfig = sanitizeCardTransferRuleConfig(parseConfig, previewData);
       }
       const rows = await executeRuleEngineAsync(
         previewData,
