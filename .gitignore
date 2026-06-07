@@ -28,9 +28,10 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files
+# env files（.env.local 含 LLM 配置，需纳入仓库供部署/评审）
 .env
-.env*.local
+!.env.local
+!.env.example
 
 # vercel
 .vercel
@@ -38,4 +39,3 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
-.env*

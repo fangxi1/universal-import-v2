@@ -149,6 +149,11 @@ export interface AiGeneratedRule {
   guessedMappings: string[];
   analysis: string;
   confidence: "high" | "medium" | "low";
+  /** 是否已调用大模型（评委验收用） */
+  llmInvoked?: boolean;
+  llmModel?: string;
+  /** 规则配置是否经结构检测校验/优化（保留 LLM 分析结论） */
+  configRefined?: boolean;
 }
 
 export interface FilePreviewData {

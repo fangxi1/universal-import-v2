@@ -266,7 +266,11 @@ export default function ImportPage() {
       if (!res.ok) throw new Error(json.error ?? "AI 分析失败");
       setAiResult(json);
       setStep("createRule");
-      toast.success("AI 已生成推荐规则，请确认并微调");
+      toast.success(
+        json.llmInvoked !== false
+          ? "DeepSeek 大模型已分析文件并生成推荐规则，请确认推测项后保存"
+          : "已生成推荐规则，请确认后保存"
+      );
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "AI 分析失败");
     } finally {

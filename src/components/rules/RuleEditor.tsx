@@ -318,6 +318,14 @@ export function RuleEditor({
         <div className="alert-success px-4 py-3">
           <p className="text-sm font-semibold mb-1">
             AI 分析结果
+            {aiResult.llmInvoked !== false ? (
+              <span className="ml-2 tag-primary font-normal">
+                已调用 DeepSeek 大模型
+                {aiResult.llmModel ? `（${aiResult.llmModel}）` : ""}
+              </span>
+            ) : (
+              <span className="ml-2 tag-warning font-normal">未调用大模型</span>
+            )}
             <span className="ml-2 tag-primary font-normal">
               置信度：
               {aiResult.confidence === "high"
@@ -328,13 +336,23 @@ export function RuleEditor({
             </span>
           </p>
           <p className="text-sm text-[var(--text-secondary)]">{aiResult.analysis}</p>
+          {aiResult.configRefined && (
+            <p className="text-xs text-[var(--text-muted)] mt-1">
+              规则 JSON 已结合文件结构检测做校验优化；分析说明与推测项来自大模型，请确认后保存。
+            </p>
+          )}
           {guessed.length > 0 && (
-            <div className="mt-2 flex flex-wrap gap-1">
-              {guessed.map((g) => (
-                <span key={g} className="tag-warning">
-                  推测: {g}
-                </span>
-              ))}
+            <div className="mt-2">
+              <p className="text-xs text-[var(--text-muted)] mb-1">
+                以下映射/步骤为大模型推测项，请核对 JSON 与试解析后再保存：
+              </p>
+              <div className="flex flex-wrap gap-1">
+                {guessed.map((g) => (
+                  <span key={g} className="tag-warning">
+                    推测: {g}
+                  </span>
+                ))}
+              </div>
             </div>
           )}
         </div>
