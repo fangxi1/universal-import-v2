@@ -330,8 +330,9 @@ export function sanitizeShippingDeliveryRuleConfig(
   config: ParseRuleConfig,
   data?: FilePreviewData
 ): ParseRuleConfig {
-  if (data && !detectShippingDeliverySheet(data).isShipping) return config;
+  if (!data) return config;
   const detected = detectShippingDeliverySheet(data);
+  if (!detected.isShipping) return config;
   const base = buildShippingDeliveryRuleConfig({ multiSheet: detected.isMultiSheet });
   return {
     ...base,
