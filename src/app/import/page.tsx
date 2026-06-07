@@ -20,6 +20,14 @@ import {
 } from "@/lib/engine/import-utils";
 import { executeRuleEngineAsync } from "@/lib/engine/rule-engine";
 import { sanitizeCardTransferRuleConfig, detectCardTransferSheet } from "@/lib/engine/card-transfer-rule";
+import {
+  detectGroupByDeliverySheet,
+  sanitizeGroupByDeliveryRuleConfig,
+} from "@/lib/engine/group-by-delivery-rule";
+import {
+  detectShippingDeliverySheet,
+  sanitizeShippingDeliveryRuleConfig,
+} from "@/lib/engine/shipping-delivery-rule";
 import { sanitizePdfRuleConfig } from "@/lib/engine/pdf-delivery-rule";
 import { PerfTimer, type ImportPerfMetrics } from "@/lib/performance/timing";
 import {
@@ -306,6 +314,10 @@ export default function ImportPage() {
         parseConfig = sanitizePdfRuleConfig(parseConfig, previewData.text);
       } else if (previewData.sheets?.length && detectCardTransferSheet(previewData).isCard) {
         parseConfig = sanitizeCardTransferRuleConfig(parseConfig, previewData);
+      } else if (previewData.sheets?.length && detectGroupByDeliverySheet(previewData).isGroupBy) {
+        parseConfig = sanitizeGroupByDeliveryRuleConfig(parseConfig, previewData);
+      } else if (previewData.sheets?.length && detectShippingDeliverySheet(previewData).isShipping) {
+        parseConfig = sanitizeShippingDeliveryRuleConfig(parseConfig, previewData);
       }
       const rows = await executeRuleEngineAsync(
         previewData,

@@ -1,6 +1,8 @@
 import type { ParseRuleConfig } from "@/types";
 import { buildCardTransferRuleConfig } from "@/lib/engine/card-transfer-rule";
 import { buildPdfDeliveryRuleConfig } from "@/lib/engine/pdf-delivery-rule";
+import { buildGroupByDeliveryRuleConfig } from "@/lib/engine/group-by-delivery-rule";
+import { buildShippingDeliveryRuleConfig } from "@/lib/engine/shipping-delivery-rule";
 
 /** 预设规则：按文件结构类型命名，非文件名硬编码 */
 export const PRESET_RULES: Array<{
@@ -10,68 +12,14 @@ export const PRESET_RULES: Array<{
 }> = [
   {
     name: "标准表格+尾部收货信息",
-    description: "适用：干扰头部 + 表格式数据 + 底部横向收货人/电话/地址（如黎明屯类）",
-    config: {
-      fileTypes: ["xlsx", "xls"],
-      steps: [
-        { type: "skipRows", count: 3 },
-        { type: "extractTable", headerRow: 0, skipPatterns: ["合计", "总计"] },
-        {
-          type: "extractFooter",
-          patterns: [
-            { field: "recipientName", labelPattern: "收货人[：:\\s]*(\\S+)", valueGroup: 1 },
-            { field: "recipientPhone", labelPattern: "电话[：:\\s]*(\\d[\\d\\-+]+)", valueGroup: 1 },
-            { field: "recipientAddress", labelPattern: "地址[：:\\s]*(.+)", valueGroup: 1 },
-          ],
-          scanFromBottom: 5,
-        },
-        { type: "filterRows", skipPatterns: ["合计"], skipEmptySku: true },
-        {
-          type: "mapFields",
-          mappings: [
-            { target: "externalCode", source: 0, transform: "trim" },
-            { target: "skuCode", source: 1, transform: "trim" },
-            { target: "skuName", source: 2, transform: "trim" },
-            { target: "skuQuantity", source: 3, transform: "number" },
-            { target: "skuSpec", source: 4, transform: "trim" },
-            { target: "recipientName", source: "footer", footerField: "recipientName" },
-            { target: "recipientPhone", source: "footer", footerField: "recipientPhone", transform: "phone" },
-            { target: "recipientAddress", source: "footer", footerField: "recipientAddress" },
-          ],
-        },
-        { type: "setDefaults", defaults: { tempLayer: "常温" } },
-      ],
-    },
+    description: "适用：干扰头部 + 表格式数据 + 合计行 + 底部横向收货人/电话/地址（如黎明屯/发货单类）",
+    config: buildShippingDeliveryRuleConfig(),
   },
   {
     name: "按单号跨行聚合",
-    description: "适用：每行含单号+物品，同单号多行共享收货人（如湖南仓类）",
-    config: {
-      fileTypes: ["xlsx", "xls"],
-      steps: [
-        { type: "skipRows", count: 1 },
-        { type: "extractTable", headerRow: 0 },
-        {
-          type: "groupBy",
-          keyField: "配送单号",
-          inheritFields: ["收件人", "电话", "地址", "收货门店"],
-        },
-        {
-          type: "mapFields",
-          mappings: [
-            { target: "externalCode", source: "配送单号", transform: "trim" },
-            { target: "storeName", source: "收货门店", transform: "trim" },
-            { target: "recipientName", source: "收件人", transform: "trim" },
-            { target: "recipientPhone", source: "电话", transform: "phone" },
-            { target: "recipientAddress", source: "地址", transform: "trim" },
-            { target: "skuCode", source: "物品编码", transform: "trim" },
-            { target: "skuName", source: "物品名称", transform: "trim" },
-            { target: "skuQuantity", source: "数量", transform: "number" },
-            { target: "skuSpec", source: "规格", transform: "trim" },
-          ],
-        },
-      ],
-    },
+    description:
+      "适用：标准表格 + 配送单号分组，同单号多物品行共享收货机构/人/电话/地址（湖南仓类）",
+    config: buildGroupByDeliveryRuleConfig(),
   },
   {
     name: "SKU×门店矩阵转置",
@@ -99,36 +47,9 @@ export const PRESET_RULES: Array<{
   },
   {
     name: "多Sheet门店出库",
-    description: "适用：每个 Sheet 为独立门店出库单（需配合 AI 微调列映射）",
-    config: {
-      fileTypes: ["xlsx", "xls"],
-      steps: [
-        { type: "processAllSheets" },
-        { type: "skipRows", count: 2 },
-        { type: "extractTable", headerRow: 0, skipPatterns: ["合计"] },
-        {
-          type: "extractFooter",
-          patterns: [
-            { field: "recipientName", labelPattern: "收货人[：:\\s]*(\\S+)", valueGroup: 1 },
-            { field: "recipientPhone", labelPattern: "电话[：:\\s]*(\\d[\\d\\-+]+)", valueGroup: 1 },
-            { field: "recipientAddress", labelPattern: "地址[：:\\s]*(.+)", valueGroup: 1 },
-          ],
-          scanFromBottom: 8,
-        },
-        {
-          type: "mapFields",
-          mappings: [
-            { target: "storeName", source: 0, transform: "trim" },
-            { target: "skuCode", source: 1, transform: "trim" },
-            { target: "skuName", source: 2, transform: "trim" },
-            { target: "skuQuantity", source: 3, transform: "number" },
-            { target: "recipientName", source: "footer", footerField: "recipientName" },
-            { target: "recipientPhone", source: "footer", footerField: "recipientPhone", transform: "phone" },
-            { target: "recipientAddress", source: "footer", footerField: "recipientAddress" },
-          ],
-        },
-      ],
-    },
+    description:
+      "适用：每 Sheet 为独立出库单（表体止于合计 + 尾部收货门店/联系人/电话/地址），processAllSheets 合并",
+    config: buildShippingDeliveryRuleConfig({ multiSheet: true }),
   },
   {
     name: "卡片式调拨单",

@@ -9,6 +9,14 @@ import {
   detectCardTransferSheet,
 } from "@/lib/engine/card-transfer-rule";
 import {
+  buildGroupByDeliveryRuleFromData,
+  detectGroupByDeliverySheet,
+} from "@/lib/engine/group-by-delivery-rule";
+import {
+  buildShippingDeliveryRuleFromData,
+  detectShippingDeliverySheet,
+} from "@/lib/engine/shipping-delivery-rule";
+import {
   buildPdfRuleFromText,
 } from "@/lib/engine/pdf-delivery-rule";
 
@@ -43,6 +51,9 @@ OrderField 可选值: externalCode, storeName, recipientName, recipientPhone, re
 要求：
 - 根据文件结构选择合适的步骤组合
 - 若 Excel 含「▶ 调拨记录 #N」或「调拨记录 #N」卡片行，且每张卡片内有物品编码/名称/规格/数量小表，必须使用 cardSplit + innerSteps（extractFooter→skipUntilMatch→extractTable→mapFields），不要用单一 extractTable
+- 若 Excel 为发货单结构（干扰头 + 表头含物品编码/发货数量 + 表体 + 合计行 + 底部收货人/收货电话/收货地址横向排列），必须使用 skipUntilMatch→extractTable(endMarker:合计)→extractFooter(scanFromBottom)→mapFields，收货信息不可当表体列
+- 若 Excel 有多个 Sheet 且每 Sheet 为独立出库单（结构相同：表头+表体+合计+尾部收货门店/联系人/电话/地址），必须加 processAllSheets 作为第一步，逐步遍历合并
+- 若 Excel 为标准表格且同一配送单号占多行（物品行号递增、同单号共享收货机构/人/电话/地址），必须使用 skipRows(1)→extractTable→groupBy(配送单号)→mapFields，不可用 extractFooter 替代 groupBy
 - 在 mapFields 的 guessed 数组中列出所有推测性的映射（列名/模式不确定的）
 - 返回纯 JSON，不要 markdown 代码块`;
 
@@ -96,6 +107,26 @@ export async function callLlmForRule(
       guessedMappings: cardRule.guessedMappings,
       analysis: cardRule.analysis,
       confidence: cardRule.confidence,
+    };
+  }
+
+  if (data.sheets?.length && detectGroupByDeliverySheet(data).isGroupBy) {
+    const groupRule = buildGroupByDeliveryRuleFromData(data);
+    return {
+      config: groupRule.config,
+      guessedMappings: groupRule.guessedMappings,
+      analysis: groupRule.analysis,
+      confidence: groupRule.confidence,
+    };
+  }
+
+  if (data.sheets?.length && detectShippingDeliverySheet(data).isShipping) {
+    const shippingRule = buildShippingDeliveryRuleFromData(data);
+    return {
+      config: shippingRule.config,
+      guessedMappings: shippingRule.guessedMappings,
+      analysis: shippingRule.analysis,
+      confidence: shippingRule.confidence,
     };
   }
 
@@ -153,6 +184,18 @@ export async function callLlmForRule(
       parsed.guessedMappings = detected.guessedMappings;
     } else if (parsed.config && data.sheets?.length && detectCardTransferSheet(data).isCard) {
       const detected = buildCardTransferRuleFromData(data);
+      parsed.config = detected.config;
+      parsed.analysis = detected.analysis;
+      parsed.confidence = detected.confidence;
+      parsed.guessedMappings = detected.guessedMappings;
+    } else if (parsed.config && data.sheets?.length && detectGroupByDeliverySheet(data).isGroupBy) {
+      const detected = buildGroupByDeliveryRuleFromData(data);
+      parsed.config = detected.config;
+      parsed.analysis = detected.analysis;
+      parsed.confidence = detected.confidence;
+      parsed.guessedMappings = detected.guessedMappings;
+    } else if (parsed.config && data.sheets?.length && detectShippingDeliverySheet(data).isShipping) {
+      const detected = buildShippingDeliveryRuleFromData(data);
       parsed.config = detected.config;
       parsed.analysis = detected.analysis;
       parsed.confidence = detected.confidence;
@@ -236,6 +279,28 @@ function generateFallbackRule(data: FilePreviewData, fileName: string): AiGenera
         guessedMappings: cardRule.guessedMappings,
         analysis: cardRule.analysis,
         confidence: cardRule.confidence,
+      };
+    }
+
+    const groupDetected = detectGroupByDeliverySheet(data);
+    if (groupDetected.isGroupBy) {
+      const groupRule = buildGroupByDeliveryRuleFromData(data);
+      return {
+        config: groupRule.config,
+        guessedMappings: groupRule.guessedMappings,
+        analysis: groupRule.analysis,
+        confidence: groupRule.confidence,
+      };
+    }
+
+    const shippingDetected = detectShippingDeliverySheet(data);
+    if (shippingDetected.isShipping) {
+      const shippingRule = buildShippingDeliveryRuleFromData(data);
+      return {
+        config: shippingRule.config,
+        guessedMappings: shippingRule.guessedMappings,
+        analysis: shippingRule.analysis,
+        confidence: shippingRule.confidence,
       };
     }
   }

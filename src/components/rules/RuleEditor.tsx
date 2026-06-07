@@ -5,10 +5,17 @@ import type { AiGeneratedRule, ParseRuleConfig, ParseRuleRecord } from "@/types"
 import { Button, toast } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import {
-  buildCardTransferRuleFromData,
   detectCardTransferSheet,
   sanitizeCardTransferRuleConfig,
 } from "@/lib/engine/card-transfer-rule";
+import {
+  detectGroupByDeliverySheet,
+  sanitizeGroupByDeliveryRuleConfig,
+} from "@/lib/engine/group-by-delivery-rule";
+import {
+  detectShippingDeliverySheet,
+  sanitizeShippingDeliveryRuleConfig,
+} from "@/lib/engine/shipping-delivery-rule";
 import {
   detectPdfDeliveryTable,
   preparePdfTextForParsing,
@@ -92,6 +99,18 @@ export function RuleEditor({
     if (previewData.sheets?.length && detectCardTransferSheet(previewData).isCard) {
       const sanitized = sanitizeCardTransferRuleConfig(aiResult.config, previewData);
       setConfigJson(JSON.stringify(sanitized, null, 2));
+      return;
+    }
+
+    if (previewData.sheets?.length && detectGroupByDeliverySheet(previewData).isGroupBy) {
+      const sanitized = sanitizeGroupByDeliveryRuleConfig(aiResult.config, previewData);
+      setConfigJson(JSON.stringify(sanitized, null, 2));
+      return;
+    }
+
+    if (previewData.sheets?.length && detectShippingDeliverySheet(previewData).isShipping) {
+      const sanitized = sanitizeShippingDeliveryRuleConfig(aiResult.config, previewData);
+      setConfigJson(JSON.stringify(sanitized, null, 2));
     }
   }, [aiResult?.config, previewData]);
 
@@ -146,6 +165,12 @@ export function RuleEditor({
       const isCardSheet =
         Boolean(previewData.sheets?.length) &&
         detectCardTransferSheet(previewData).isCard;
+      const isGroupBySheet =
+        Boolean(previewData.sheets?.length) &&
+        detectGroupByDeliverySheet(previewData).isGroupBy;
+      const isShippingSheet =
+        Boolean(previewData.sheets?.length) &&
+        detectShippingDeliverySheet(previewData).isShipping;
 
       if (isPdfText) {
         const sanitized = sanitizePdfRuleConfig(config, previewData.text);
@@ -161,6 +186,27 @@ export function RuleEditor({
           toast.info("已自动更新为卡片式调拨单规则（▶ 调拨记录 #N）", {
             duration: 5000,
           });
+        }
+      } else if (isGroupBySheet) {
+        const sanitized = sanitizeGroupByDeliveryRuleConfig(config, previewData);
+        config = sanitized;
+        if (JSON.stringify(sanitized) !== JSON.stringify(parseConfig())) {
+          setConfigJson(JSON.stringify(config, null, 2));
+          toast.info("已自动更新为按配送单号跨行聚合规则（groupBy）", {
+            duration: 5000,
+          });
+        }
+      } else if (isShippingSheet) {
+        const sanitized = sanitizeShippingDeliveryRuleConfig(config, previewData);
+        config = sanitized;
+        if (JSON.stringify(sanitized) !== JSON.stringify(parseConfig())) {
+          setConfigJson(JSON.stringify(config, null, 2));
+          toast.info(
+            detectShippingDeliverySheet(previewData).isMultiSheet
+              ? "已自动更新为多Sheet出库单规则（processAllSheets + 尾部信息区）"
+              : "已自动更新为发货单规则（表体止于合计 + 尾部信息区）",
+            { duration: 5000 }
+          );
         }
       }
 
@@ -185,7 +231,13 @@ export function RuleEditor({
               ? `试解析仍为空：PDF 含 ${zbwpHits} 处 ZBWP 编码，预处理未还原为物品行。请 Ctrl+F5 强刷后重试，并对照下方预处理文本`
               : isCardSheet
                 ? "试解析仍为空：请确认文件含「▶ 调拨记录 #N」卡片行，且每张卡片内有物品编码/名称/规格/数量表"
-                : "试解析结果为空，请对照文件结构检查规则配置";
+                : isGroupBySheet
+                  ? "试解析仍为空：请确认第2行表头含配送单号/物品编码/实发数量，且同单号有多行物品"
+                  : isShippingSheet
+                  ? detectShippingDeliverySheet(previewData).isMultiSheet
+                    ? "试解析仍为空：请确认每 Sheet 含表头(物品编码+出库数量)、合计行及底部收货门店/联系人/联系电话/收货地址"
+                    : "试解析仍为空：请确认有表头(物品编码+发货数量)、合计行，以及底部收货人/收货电话/收货地址"
+                  : "试解析结果为空，请对照文件结构检查规则配置";
         toast.warning(
           warnings.length > 1 ? `试解析为空：${warnings.slice(0, 2).join("；")}` : hint
         );
@@ -215,6 +267,10 @@ export function RuleEditor({
       config = sanitizePdfRuleConfig(config, previewData.text);
     } else if (previewData?.sheets?.length && detectCardTransferSheet(previewData).isCard) {
       config = sanitizeCardTransferRuleConfig(config, previewData);
+    } else if (previewData?.sheets?.length && detectGroupByDeliverySheet(previewData).isGroupBy) {
+      config = sanitizeGroupByDeliveryRuleConfig(config, previewData);
+    } else if (previewData?.sheets?.length && detectShippingDeliverySheet(previewData).isShipping) {
+      config = sanitizeShippingDeliveryRuleConfig(config, previewData);
     }
 
     setSaving(true);

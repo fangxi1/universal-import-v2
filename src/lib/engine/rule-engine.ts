@@ -101,7 +101,7 @@ function extractFooterFromRows(
       if (!label) continue;
 
       const colonVal = label.match(
-        /^(调入门店|收货人|电话|收货地址|调拨单号)[：:\s]+(.+)$/
+        /^(调入门店|收货门店|收货人|联系人|收货电话|联系电话|电话|收货地址|地址|调拨单号|单据号)[：:\s|]+(.+)$/
       );
       if (colonVal) {
         assignFooterLabel(footer, colonVal[1], colonVal[2]);
@@ -113,8 +113,20 @@ function extractFooterFromRows(
       if (label === "调入门店" || label.startsWith("调入门店")) {
         assignFooterLabel(footer, "调入门店", next);
         i++;
+      } else if (label === "收货门店" || label.startsWith("收货门店")) {
+        assignFooterLabel(footer, "收货门店", next);
+        i++;
       } else if (label === "收货人" || label.startsWith("收货人")) {
         assignFooterLabel(footer, "收货人", next);
+        i++;
+      } else if (label === "联系人" || label.startsWith("联系人")) {
+        assignFooterLabel(footer, "联系人", next);
+        i++;
+      } else if (label === "收货电话" || label.startsWith("收货电话")) {
+        assignFooterLabel(footer, "收货电话", next);
+        i++;
+      } else if (label === "联系电话" || label.startsWith("联系电话")) {
+        assignFooterLabel(footer, "联系电话", next);
         i++;
       } else if (label === "电话" || label.startsWith("电话")) {
         assignFooterLabel(footer, "电话", next);
@@ -124,6 +136,9 @@ function extractFooterFromRows(
         i++;
       } else if (label === "调拨单号" || label.startsWith("调拨单号")) {
         assignFooterLabel(footer, "调拨单号", next);
+        i++;
+      } else if (label === "单据号" || label.startsWith("单据号")) {
+        assignFooterLabel(footer, "单据号", next);
         i++;
       }
     }
@@ -139,14 +154,18 @@ function assignFooterLabel(
 ) {
   const v = trimCell(value);
   if (!v) return;
-  if (/调入门店/.test(label) && !footer.storeName?.trim()) footer.storeName = v;
+  if (/调入门店|收货门店/.test(label) && !footer.storeName?.trim()) footer.storeName = v;
+  else if (/^联系人/.test(label) && !footer.recipientName?.trim())
+    footer.recipientName = v;
   else if (/收货人/.test(label) && !footer.recipientName?.trim())
     footer.recipientName = v;
-  else if (/电话/.test(label) && !footer.recipientPhone?.trim())
+  else if (/联系电话|收货电话|^电话/.test(label) && !footer.recipientPhone?.trim())
     footer.recipientPhone = v;
   else if (/收货地址|^地址/.test(label) && !footer.recipientAddress?.trim())
     footer.recipientAddress = v;
   else if (/调拨单号/.test(label) && !footer.externalCode?.trim())
+    footer.externalCode = v;
+  else if (/单据号/.test(label) && !footer.externalCode?.trim())
     footer.externalCode = v;
 }
 
@@ -190,9 +209,13 @@ function applyStep(
       break;
     }
     case "extractFooter": {
-      const sourceRows = state.rows.length
-        ? state.rows
-        : state.sheets[0]?.rows ?? [];
+      const useFullSheet =
+        step.scanFromBottom != null || step.scanFromTop != null;
+      const sourceRows = useFullSheet
+        ? (state.sheets[0]?.rows ?? state.rows)
+        : state.rows.length
+          ? state.rows
+          : (state.sheets[0]?.rows ?? []);
       state.footer = {
         ...state.footer,
         ...extractFooterFromRows(
@@ -214,11 +237,16 @@ function applyStep(
       for (const row of state.rows) {
         const key = row[keyCol]?.trim() ?? "";
         if (!key) continue;
+        const rowValues = inheritCols.map((c) => row[c]?.trim() ?? "");
         if (!inheritByKey.has(key)) {
-          inheritByKey.set(
-            key,
-            inheritCols.map((c) => row[c]?.trim() ?? "")
-          );
+          inheritByKey.set(key, rowValues);
+        } else {
+          const existing = inheritByKey.get(key)!;
+          inheritCols.forEach((_, i) => {
+            if (!existing[i]?.trim() && rowValues[i]?.trim()) {
+              existing[i] = rowValues[i];
+            }
+          });
         }
       }
 
@@ -548,7 +576,10 @@ function applyStep(
           } else if (typeof m.source === "number" || typeof m.source === "string") {
             val = resolveColumn(m.source, state.headers, row);
           }
-          rec[m.target] = applyTransform(val, m.transform);
+          const transformed = applyTransform(val, m.transform);
+          if (transformed.trim() || !rec[m.target]?.trim()) {
+            rec[m.target] = transformed;
+          }
         }
         return rec;
       };
@@ -781,7 +812,10 @@ async function applyMapFieldsAsync(
       } else if (typeof m.source === "number" || typeof m.source === "string") {
         val = resolveColumn(m.source, state.headers, row);
       }
-      rec[m.target] = applyTransform(val, m.transform);
+      const transformed = applyTransform(val, m.transform);
+      if (transformed.trim() || !rec[m.target]?.trim()) {
+        rec[m.target] = transformed;
+      }
     }
     return rec;
   };

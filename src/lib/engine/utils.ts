@@ -23,8 +23,20 @@ export function matchPattern(text: string, pattern: string): RegExpMatchArray | 
 }
 
 export function findColumnIndex(headers: string[], name: string): number {
-  const lower = name.toLowerCase();
-  return headers.findIndex((h) => h.toLowerCase().includes(lower) || lower.includes(h.toLowerCase()));
+  const lower = name.toLowerCase().trim();
+  const exact = headers.findIndex((h) => h.toLowerCase().trim() === lower);
+  if (exact >= 0) return exact;
+
+  const candidates = headers
+    .map((h, i) => ({ h: h.trim(), i }))
+    .filter(
+      ({ h }) =>
+        h.toLowerCase().includes(lower) || lower.includes(h.toLowerCase())
+    );
+  if (!candidates.length) return -1;
+
+  candidates.sort((a, b) => a.h.length - b.h.length);
+  return candidates[0].i;
 }
 
 export function resolveColumn(
