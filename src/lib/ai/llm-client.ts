@@ -29,7 +29,7 @@ const SYSTEM_PROMPT = `你是物流出库单解析规则设计专家。你的任
 5. groupBy: { type:"groupBy", keyField:string, inheritFields:string[] } - 按字段分组并继承
 6. matrixTranspose: { type:"matrixTranspose", rowLabelColumn:number, headerRow:number, dataStartRow:number, skipColumns?:number[] } - 矩阵转置
 7. processAllSheets: { type:"processAllSheets", sheetNames?:string[] } - 多Sheet标记（需配合 per-sheet 规则）
-8. cardSplit: { type:"cardSplit", startMarker:string, endMarker?:string, innerSteps?:RuleStep[] } - 卡片式拆分（可对每卡片执行 innerSteps）
+8. cardSplit: { type:"cardSplit", startMarker:string, endMarker?:string, innerSteps?:RuleStep[] } - 卡片式拆分（▶ 调拨记录 #N 为卡片边界；每张卡片含收货信息+4列物品小表，可对每卡片执行 innerSteps）
 9. textBlockSplit: { type:"textBlockSplit", blockSeparator:string, linePatterns:[{field?, pattern, isItemLine?, itemFields?}] } - 纯文本块解析
 10. compositeCellSplit: { type:"compositeCellSplit", column:string|number, itemPattern:string, delimiter?:string } - 复合单元格拆分
 11. dateStoreMatrix: { type:"dateStoreMatrix", storeColumn:number, dateHeaderRow:number, dataStartRow:number, cellItemPattern:string } - 日期×门店矩阵
@@ -42,6 +42,7 @@ OrderField 可选值: externalCode, storeName, recipientName, recipientPhone, re
 
 要求：
 - 根据文件结构选择合适的步骤组合
+- 若 Excel 含「▶ 调拨记录 #N」或「调拨记录 #N」卡片行，且每张卡片内有物品编码/名称/规格/数量小表，必须使用 cardSplit + innerSteps（extractFooter→skipUntilMatch→extractTable→mapFields），不要用单一 extractTable
 - 在 mapFields 的 guessed 数组中列出所有推测性的映射（列名/模式不确定的）
 - 返回纯 JSON，不要 markdown 代码块`;
 
@@ -88,6 +89,16 @@ export async function callLlmForRule(
   data: FilePreviewData,
   fileName: string
 ): Promise<AiGeneratedRule> {
+  if (data.sheets?.length && detectCardTransferSheet(data).isCard) {
+    const cardRule = buildCardTransferRuleFromData(data);
+    return {
+      config: cardRule.config,
+      guessedMappings: cardRule.guessedMappings,
+      analysis: cardRule.analysis,
+      confidence: cardRule.confidence,
+    };
+  }
+
   const apiKey = process.env.LLM_API_KEY;
   const baseUrl = process.env.LLM_BASE_URL ?? "https://api.deepseek.com/v1";
   const model = process.env.LLM_MODEL ?? "deepseek-chat";

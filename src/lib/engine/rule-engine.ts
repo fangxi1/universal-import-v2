@@ -270,17 +270,17 @@ function applyStep(
       const cards: string[][][] = [];
       let current: string[][] = [];
 
+      const rowMatchesStart = (row: string[]) =>
+        row.some((cell) => matchPattern(cell, step.startMarker)) ||
+        matchPattern(row.join(" "), step.startMarker);
+
       for (const row of state.rows) {
-        const line = row.join(" ");
-        if (matchPattern(line, step.startMarker)) {
-          if (
-            current.length &&
-            matchPattern(current[0]?.join(" ") ?? "", step.startMarker)
-          ) {
+        if (rowMatchesStart(row)) {
+          if (current.length && rowMatchesStart(current[0] ?? [])) {
             cards.push(current);
           }
           current = [row];
-        } else if (step.endMarker && matchPattern(line, step.endMarker)) {
+        } else if (step.endMarker && matchPattern(row.join(" "), step.endMarker)) {
           current.push(row);
           cards.push(current);
           current = [];

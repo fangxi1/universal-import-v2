@@ -5,11 +5,31 @@ import type { FilePreviewData } from "@/types";
 export const CARD_TRANSFER_START_MARKER =
   "[▶►▷▸>●]?\\s*调拨记录\\s*#?\\d*";
 
+const ITEM_CODE_HEADER = /物品编码|SKU编码|sku编码|货号|商品编码/;
+const ITEM_QTY_HEADER = /数量|件数|调拨数量/;
+
 export function isCardTransferMarkerLine(line: string): boolean {
+  const text = line.trim();
+  if (!text) return false;
   return (
-    /[▶►▷▸>●]?\s*调拨记录\s*#?\d*/i.test(line) ||
-    /调拨记录\s*#\d+/i.test(line)
+    /[▶►▷▸>●]?\s*调拨记录\s*#?\d*/i.test(text) ||
+    /调拨记录\s*#\d+/i.test(text)
   );
+}
+
+/** 行内是否含卡片起始标志（逐格扫描，兼容合并单元格只出现在首列） */
+export function rowHasCardTransferMarker(row: string[]): boolean {
+  if (row.some((cell) => isCardTransferMarkerLine(cell))) return true;
+  return isCardTransferMarkerLine(row.join(" "));
+}
+
+/** 行内是否像卡片内嵌物品小表表头 */
+export function rowHasCardItemTableHeader(row: string[]): boolean {
+  const line = row.join(" ");
+  const hasCode = row.some((c) => ITEM_CODE_HEADER.test(c)) || ITEM_CODE_HEADER.test(line);
+  const hasQty =
+    row.some((c) => ITEM_QTY_HEADER.test(c)) || ITEM_QTY_HEADER.test(line);
+  return hasCode && hasQty;
 }
 
 export function detectCardTransferSheet(data: FilePreviewData): {
@@ -20,15 +40,21 @@ export function detectCardTransferSheet(data: FilePreviewData): {
   const rows = data.sheets?.[0]?.rows ?? [];
   let cardCount = 0;
   let hasItemTable = false;
+  let hasTransferTitle = false;
 
   for (const row of rows) {
     const line = row.join(" ");
-    if (isCardTransferMarkerLine(line)) cardCount++;
-    if (/物品编码/.test(line) && /数量/.test(line)) hasItemTable = true;
+    if (rowHasCardTransferMarker(row)) cardCount++;
+    if (rowHasCardItemTableHeader(row)) hasItemTable = true;
+    if (/门店调拨单|卡片式调拨|配送中心.*调拨/.test(line)) hasTransferTitle = true;
   }
 
+  const isCard =
+    cardCount >= 1 &&
+    (hasItemTable || (hasTransferTitle && cardCount >= 2));
+
   return {
-    isCard: cardCount >= 1 && hasItemTable,
+    isCard,
     cardCount,
     hasItemTable,
   };
@@ -47,7 +73,7 @@ export function buildCardTransferRuleConfig(): ParseRuleConfig {
         patterns: [
           {
             field: "externalCode",
-            labelPattern: "调拨单号[：:\\s]*(\\S+)",
+            labelPattern: "调拨单号[：:\\s|]*([A-Za-z0-9\\-]+)",
             valueGroup: 1,
           },
         ],
@@ -85,7 +111,7 @@ export function buildCardTransferRuleConfig(): ParseRuleConfig {
           },
           {
             type: "skipUntilMatch",
-            pattern: "物品编码|SKU编码|编码",
+            pattern: "物品编码|SKU编码|货号|商品编码|编码",
             maxScan: 15,
           },
           {
@@ -115,8 +141,8 @@ export function buildCardTransferRuleConfig(): ParseRuleConfig {
                 source: "footer",
                 footerField: "recipientAddress",
               },
-              { target: "skuCode", source: "物品编码", transform: "trim" },
-              { target: "skuName", source: "物品名称", transform: "trim" },
+              { target: "skuCode", source: "编码", transform: "trim" },
+              { target: "skuName", source: "名称", transform: "trim" },
               { target: "skuSpec", source: "规格", transform: "trim" },
               { target: "skuQuantity", source: "数量", transform: "number" },
             ],

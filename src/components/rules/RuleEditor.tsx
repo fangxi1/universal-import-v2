@@ -78,14 +78,22 @@ export function RuleEditor({
   );
 
   useEffect(() => {
-    if (!previewData?.text?.trim() || !aiResult?.config) return;
+    if (!previewData || !aiResult?.config) return;
+
     const isPdf =
       aiResult.config.fileTypes?.includes("pdf") ||
-      Boolean(previewData.text && !previewData.sheets?.length);
-    if (!isPdf) return;
-    const sanitized = sanitizePdfRuleConfig(aiResult.config, previewData.text);
-    setConfigJson(JSON.stringify(sanitized, null, 2));
-  }, [aiResult?.config, previewData?.text, previewData?.sheets?.length]);
+      Boolean(previewData.text?.trim() && !previewData.sheets?.length);
+    if (isPdf && previewData.text?.trim()) {
+      const sanitized = sanitizePdfRuleConfig(aiResult.config, previewData.text);
+      setConfigJson(JSON.stringify(sanitized, null, 2));
+      return;
+    }
+
+    if (previewData.sheets?.length && detectCardTransferSheet(previewData).isCard) {
+      const sanitized = sanitizeCardTransferRuleConfig(aiResult.config, previewData);
+      setConfigJson(JSON.stringify(sanitized, null, 2));
+    }
+  }, [aiResult?.config, previewData]);
 
   useEffect(() => {
     if (isEditing) {
@@ -192,7 +200,7 @@ export function RuleEditor({
   };
 
   const handleSave = async () => {
-    const config = parseConfig();
+    let config = parseConfig();
     if (!config) return;
     if (!name.trim()) {
       toast.error("请输入规则名称");
@@ -201,6 +209,12 @@ export function RuleEditor({
     if (nameConflict) {
       toast.error(`规则名称「${name.trim()}」已存在，请更换名称`);
       return;
+    }
+
+    if (previewData?.text?.trim() && !previewData.sheets?.length) {
+      config = sanitizePdfRuleConfig(config, previewData.text);
+    } else if (previewData?.sheets?.length && detectCardTransferSheet(previewData).isCard) {
+      config = sanitizeCardTransferRuleConfig(config, previewData);
     }
 
     setSaving(true);
