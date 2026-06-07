@@ -10,6 +10,7 @@ import { StickyActionBar } from "@/components/ui/StickyActionBar";
 import { PerfMetricsBanner } from "@/components/import/PerfMetricsBanner";
 import { SubmitResultPanel } from "@/components/import/SubmitResultPanel";
 import type { ImportPerfMetrics } from "@/lib/performance/timing";
+import { yieldToMain } from "@/lib/performance/timing";
 import { VirtualOrderTable } from "@/components/preview/VirtualOrderTable";
 import { ValidationPanel } from "@/components/preview/ValidationPanel";
 import { exportOrdersToExcel } from "@/lib/export/excel-export";
@@ -23,7 +24,7 @@ import {
 import type { OrderField, OrderRow, ParseProgress, SubmitResult } from "@/types";
 import { validatePreviewData } from "@/lib/validation/order-validator";
 
-const SUBMIT_CHUNK_SIZE = 25;
+const SUBMIT_CHUNK_SIZE = 10;
 
 interface ImportDataEditorProps {
   initialRows: OrderRow[];
@@ -209,17 +210,31 @@ export function ImportDataEditor({
     let cumulativeSuccess = 0;
     let cumulativeFailed = 0;
 
+    const total = rows.length;
+    const updateProgress = (completed: number, stage: string) => {
+      const percent =
+        total > 0 ? Math.min(100, Math.round((completed / total) * 100)) : 0;
+      setSubmitProgress({
+        percent,
+        current: completed,
+        total,
+        stage,
+      });
+    };
+
     try {
+      updateProgress(0, "正在提交下单...");
+      await yieldToMain();
+
       for (let offset = 0; offset < rows.length; offset += SUBMIT_CHUNK_SIZE) {
         const chunk = rows.slice(offset, offset + SUBMIT_CHUNK_SIZE);
-        const processed = Math.min(offset + chunk.length, rows.length);
+        const completed = Math.min(offset + chunk.length, rows.length);
 
-        setSubmitProgress({
-          percent: Math.round((processed / rows.length) * 90),
-          current: processed,
-          total: rows.length,
-          stage: `正在写入数据库 · ${processed}/${rows.length} 条`,
-        });
+        updateProgress(
+          offset,
+          `正在写入数据库 · ${offset + 1}-${completed}/${total} 条`
+        );
+        await yieldToMain();
 
         const res = await fetch("/api/orders", {
           method: "POST",
@@ -250,14 +265,12 @@ export function ImportDataEditor({
             )
           );
         }
+
+        updateProgress(completed, `已写入 ${completed}/${total} 条`);
+        await yieldToMain();
       }
 
-      setSubmitProgress({
-        percent: 100,
-        current: rows.length,
-        total: rows.length,
-        stage: "提交完成",
-      });
+      updateProgress(total, "提交完成");
 
       const result: SubmitResult & { batchId?: string } = {
         success: cumulativeSuccess,

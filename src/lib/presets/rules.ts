@@ -3,6 +3,29 @@ import { buildCardTransferRuleConfig } from "@/lib/engine/card-transfer-rule";
 import { buildPdfDeliveryRuleConfig } from "@/lib/engine/pdf-delivery-rule";
 import { buildGroupByDeliveryRuleConfig } from "@/lib/engine/group-by-delivery-rule";
 import { buildShippingDeliveryRuleConfig } from "@/lib/engine/shipping-delivery-rule";
+import { buildStoreMatrixRuleConfig } from "@/lib/engine/store-matrix-rule";
+
+/** 欢乐牧场类典型表头（用于预设 seed，实际解析会按上传文件 sanitize） */
+const STORE_MATRIX_SAMPLE_HEADERS = [
+  "仓库名称",
+  "货主名称",
+  "SKU名称",
+  "SKU条码",
+  "外部商品编码",
+  "库存状态",
+  "库存单位",
+  "规格",
+  "在库数量",
+  "可用数量",
+  "待移入量",
+  "分配数量",
+  "冻结数量",
+  "银泰",
+  "金银湖",
+  "金桥",
+  "门店B",
+  "下单后结余",
+];
 
 /** 预设规则：按文件结构类型命名，非文件名硬编码 */
 export const PRESET_RULES: Array<{
@@ -23,21 +46,18 @@ export const PRESET_RULES: Array<{
   },
   {
     name: "SKU×门店矩阵转置",
-    description: "适用：SKU 为行、门店为列的矩阵（如欢乐牧场类）",
-    config: {
-      fileTypes: ["xlsx", "xls"],
-      steps: [
-        { type: "skipRows", count: 1 },
-        {
-          type: "matrixTranspose",
-          rowLabelColumn: 0,
-          headerRow: 0,
-          dataStartRow: 1,
-          skipColumns: [0],
-        },
-        { type: "setDefaults", defaults: { tempLayer: "常温" } },
-      ],
-    },
+    description:
+      "适用：SKU 为行、门店为列的矩阵（欢乐牧场类），matrixTranspose 转置为运单",
+    config: buildStoreMatrixRuleConfig(
+      {
+        isMatrix: true,
+        headerRowIndex: 1,
+        skipRows: 1,
+        storeColumnCount: 4,
+        columnCount: 18,
+      },
+      STORE_MATRIX_SAMPLE_HEADERS
+    ),
   },
   {
     name: "PDF配送单",

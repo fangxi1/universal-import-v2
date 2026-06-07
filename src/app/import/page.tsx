@@ -28,6 +28,10 @@ import {
   detectShippingDeliverySheet,
   sanitizeShippingDeliveryRuleConfig,
 } from "@/lib/engine/shipping-delivery-rule";
+import {
+  detectStoreSkuMatrixSheet,
+  sanitizeStoreMatrixRuleConfig,
+} from "@/lib/engine/store-matrix-rule";
 import { sanitizePdfRuleConfig } from "@/lib/engine/pdf-delivery-rule";
 import { PerfTimer, type ImportPerfMetrics } from "@/lib/performance/timing";
 import {
@@ -316,6 +320,8 @@ export default function ImportPage() {
         parseConfig = sanitizeCardTransferRuleConfig(parseConfig, previewData);
       } else if (previewData.sheets?.length && detectGroupByDeliverySheet(previewData).isGroupBy) {
         parseConfig = sanitizeGroupByDeliveryRuleConfig(parseConfig, previewData);
+      } else if (previewData.sheets?.length && detectStoreSkuMatrixSheet(previewData).isMatrix) {
+        parseConfig = sanitizeStoreMatrixRuleConfig(parseConfig, previewData);
       } else if (previewData.sheets?.length && detectShippingDeliverySheet(previewData).isShipping) {
         parseConfig = sanitizeShippingDeliveryRuleConfig(parseConfig, previewData);
       }
@@ -549,7 +555,19 @@ export default function ImportPage() {
                       }}
                       onDelete={async () => {
                         if (!confirm("确定删除该规则？")) return;
-                        await fetch(`/api/rules/${rule.id}`, { method: "DELETE" });
+                        const res = await fetch(`/api/rules/${rule.id}`, {
+                          method: "DELETE",
+                        });
+                        const json = await res.json().catch(() => ({}));
+                        if (!res.ok) {
+                          toast.error(
+                            (json as { error?: string }).error ?? "删除失败，请稍后重试"
+                          );
+                          return;
+                        }
+                        if (selectedRuleId === rule.id) {
+                          setSelectedRuleId("");
+                        }
                         await loadRules();
                         toast.success("已删除");
                       }}

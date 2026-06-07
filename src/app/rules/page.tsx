@@ -169,7 +169,16 @@ export default function RulesPage() {
                 }}
                 onDelete={async () => {
                   if (!confirm("确定删除该规则？")) return;
-                  await fetch(`/api/rules/${rule.id}`, { method: "DELETE" });
+                  const res = await fetch(`/api/rules/${rule.id}`, {
+                    method: "DELETE",
+                  });
+                  const json = await res.json().catch(() => ({}));
+                  if (!res.ok) {
+                    toast.error(
+                      (json as { error?: string }).error ?? "删除失败，请稍后重试"
+                    );
+                    return;
+                  }
                   await loadRules();
                   toast.success("已删除");
                 }}

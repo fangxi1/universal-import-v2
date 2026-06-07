@@ -17,6 +17,10 @@ import {
   sanitizeShippingDeliveryRuleConfig,
 } from "@/lib/engine/shipping-delivery-rule";
 import {
+  detectStoreSkuMatrixSheet,
+  sanitizeStoreMatrixRuleConfig,
+} from "@/lib/engine/store-matrix-rule";
+import {
   detectPdfDeliveryTable,
   preparePdfTextForParsing,
   sanitizePdfRuleConfig,
@@ -108,6 +112,12 @@ export function RuleEditor({
       return;
     }
 
+    if (previewData.sheets?.length && detectStoreSkuMatrixSheet(previewData).isMatrix) {
+      const sanitized = sanitizeStoreMatrixRuleConfig(aiResult.config, previewData);
+      setConfigJson(JSON.stringify(sanitized, null, 2));
+      return;
+    }
+
     if (previewData.sheets?.length && detectShippingDeliverySheet(previewData).isShipping) {
       const sanitized = sanitizeShippingDeliveryRuleConfig(aiResult.config, previewData);
       setConfigJson(JSON.stringify(sanitized, null, 2));
@@ -168,6 +178,9 @@ export function RuleEditor({
       const isGroupBySheet =
         Boolean(previewData.sheets?.length) &&
         detectGroupByDeliverySheet(previewData).isGroupBy;
+      const isStoreMatrixSheet =
+        Boolean(previewData.sheets?.length) &&
+        detectStoreSkuMatrixSheet(previewData).isMatrix;
       const isShippingSheet =
         Boolean(previewData.sheets?.length) &&
         detectShippingDeliverySheet(previewData).isShipping;
@@ -193,6 +206,15 @@ export function RuleEditor({
         if (JSON.stringify(sanitized) !== JSON.stringify(parseConfig())) {
           setConfigJson(JSON.stringify(config, null, 2));
           toast.info("已自动更新为按配送单号跨行聚合规则（groupBy）", {
+            duration: 5000,
+          });
+        }
+      } else if (isStoreMatrixSheet) {
+        const sanitized = sanitizeStoreMatrixRuleConfig(config, previewData);
+        config = sanitized;
+        if (JSON.stringify(sanitized) !== JSON.stringify(parseConfig())) {
+          setConfigJson(JSON.stringify(config, null, 2));
+          toast.info("已自动更新为 SKU×门店矩阵转置规则（matrixTranspose）", {
             duration: 5000,
           });
         }
@@ -233,7 +255,9 @@ export function RuleEditor({
                 ? "试解析仍为空：请确认文件含「▶ 调拨记录 #N」卡片行，且每张卡片内有物品编码/名称/规格/数量表"
                 : isGroupBySheet
                   ? "试解析仍为空：请确认第2行表头含配送单号/物品编码/实发数量，且同单号有多行物品"
-                  : isShippingSheet
+                  : isStoreMatrixSheet
+                    ? "试解析仍为空：请确认第2行表头含 SKU名称/SKU条码 及门店列（银泰等），数量在门店列交叉格"
+                    : isShippingSheet
                   ? detectShippingDeliverySheet(previewData).isMultiSheet
                     ? "试解析仍为空：请确认每 Sheet 含表头(物品编码+出库数量)、合计行及底部收货门店/联系人/联系电话/收货地址"
                     : "试解析仍为空：请确认有表头(物品编码+发货数量)、合计行，以及底部收货人/收货电话/收货地址"
@@ -269,6 +293,8 @@ export function RuleEditor({
       config = sanitizeCardTransferRuleConfig(config, previewData);
     } else if (previewData?.sheets?.length && detectGroupByDeliverySheet(previewData).isGroupBy) {
       config = sanitizeGroupByDeliveryRuleConfig(config, previewData);
+    } else if (previewData?.sheets?.length && detectStoreSkuMatrixSheet(previewData).isMatrix) {
+      config = sanitizeStoreMatrixRuleConfig(config, previewData);
     } else if (previewData?.sheets?.length && detectShippingDeliverySheet(previewData).isShipping) {
       config = sanitizeShippingDeliveryRuleConfig(config, previewData);
     }

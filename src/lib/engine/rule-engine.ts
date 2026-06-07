@@ -267,22 +267,42 @@ function applyStep(
       const headerRow = state.rows[step.headerRow] ?? [];
       const dataRows = state.rows.slice(step.dataStartRow);
       const newRecords: Partial<Record<OrderField, string>>[] = [];
+      const skuCodeCol = step.skuCodeColumn ?? step.rowLabelColumn;
+      const skuNameCol = step.skuNameColumn ?? step.rowLabelColumn;
 
       for (const row of dataRows) {
-        const label = row[step.rowLabelColumn] ?? "";
-        if (!label.trim()) continue;
+        if (isEmptyRow(row)) continue;
+        const skuCode = trimCell(row[skuCodeCol]);
+        const skuName = trimCell(row[skuNameCol]);
+        if (!skuCode && !skuName) continue;
 
         headerRow.forEach((colHeader, colIdx) => {
           if (step.skipColumns?.includes(colIdx)) return;
-          if (colIdx === step.rowLabelColumn) return;
+          if (colIdx === skuCodeCol || colIdx === skuNameCol) return;
+          if (
+            step.rowLabelColumn === colIdx &&
+            step.skuCodeColumn == null &&
+            step.skuNameColumn == null
+          ) {
+            return;
+          }
+
+          const header = trimCell(colHeader);
+          if (!header) return;
+          if (
+            step.skipHeaderPatterns?.some((p) => matchPattern(header, p))
+          ) {
+            return;
+          }
+
           const qty = row[colIdx]?.trim();
           if (!qty || qty === "0") return;
 
           newRecords.push({
-            skuCode: label,
-            skuName: label,
+            skuCode: skuCode || skuName,
+            skuName: skuName || skuCode,
             skuQuantity: qty,
-            storeName: colHeader,
+            storeName: header,
             ...step.staticFields,
           });
         });

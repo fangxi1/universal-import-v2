@@ -78,6 +78,9 @@ export type RuleStep =
       headerRow: number;
       dataStartRow: number;
       skipColumns?: number[];
+      skuCodeColumn?: number;
+      skuNameColumn?: number;
+      skipHeaderPatterns?: string[];
       staticFields?: Record<string, string>;
     }
   | { type: "processAllSheets"; sheetNames?: string[] }

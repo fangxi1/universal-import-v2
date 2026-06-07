@@ -13,6 +13,10 @@ import {
   detectGroupByDeliverySheet,
 } from "@/lib/engine/group-by-delivery-rule";
 import {
+  buildStoreMatrixRuleFromData,
+  detectStoreSkuMatrixSheet,
+} from "@/lib/engine/store-matrix-rule";
+import {
   buildShippingDeliveryRuleFromData,
   detectShippingDeliverySheet,
 } from "@/lib/engine/shipping-delivery-rule";
@@ -54,6 +58,7 @@ OrderField 可选值: externalCode, storeName, recipientName, recipientPhone, re
 - 若 Excel 为发货单结构（干扰头 + 表头含物品编码/发货数量 + 表体 + 合计行 + 底部收货人/收货电话/收货地址横向排列），必须使用 skipUntilMatch→extractTable(endMarker:合计)→extractFooter(scanFromBottom)→mapFields，收货信息不可当表体列
 - 若 Excel 有多个 Sheet 且每 Sheet 为独立出库单（结构相同：表头+表体+合计+尾部收货门店/联系人/电话/地址），必须加 processAllSheets 作为第一步，逐步遍历合并
 - 若 Excel 为标准表格且同一配送单号占多行（物品行号递增、同单号共享收货机构/人/电话/地址），必须使用 skipRows(1)→extractTable→groupBy(配送单号)→mapFields，不可用 extractFooter 替代 groupBy
+- 若 Excel 为 SKU×门店矩阵（左侧 SKU 信息列 + 右侧门店名作为列头、单元格为数量），必须使用 skipRows(跳过合并表头)→matrixTranspose，将每个非零门店列转置为一条 storeName+skuQuantity 运单
 - 在 mapFields 的 guessed 数组中列出所有推测性的映射（列名/模式不确定的）
 - 返回纯 JSON，不要 markdown 代码块`;
 
@@ -117,6 +122,16 @@ export async function callLlmForRule(
       guessedMappings: groupRule.guessedMappings,
       analysis: groupRule.analysis,
       confidence: groupRule.confidence,
+    };
+  }
+
+  if (data.sheets?.length && detectStoreSkuMatrixSheet(data).isMatrix) {
+    const matrixRule = buildStoreMatrixRuleFromData(data);
+    return {
+      config: matrixRule.config,
+      guessedMappings: matrixRule.guessedMappings,
+      analysis: matrixRule.analysis,
+      confidence: matrixRule.confidence,
     };
   }
 
@@ -190,6 +205,12 @@ export async function callLlmForRule(
       parsed.guessedMappings = detected.guessedMappings;
     } else if (parsed.config && data.sheets?.length && detectGroupByDeliverySheet(data).isGroupBy) {
       const detected = buildGroupByDeliveryRuleFromData(data);
+      parsed.config = detected.config;
+      parsed.analysis = detected.analysis;
+      parsed.confidence = detected.confidence;
+      parsed.guessedMappings = detected.guessedMappings;
+    } else if (parsed.config && data.sheets?.length && detectStoreSkuMatrixSheet(data).isMatrix) {
+      const detected = buildStoreMatrixRuleFromData(data);
       parsed.config = detected.config;
       parsed.analysis = detected.analysis;
       parsed.confidence = detected.confidence;
@@ -290,6 +311,17 @@ function generateFallbackRule(data: FilePreviewData, fileName: string): AiGenera
         guessedMappings: groupRule.guessedMappings,
         analysis: groupRule.analysis,
         confidence: groupRule.confidence,
+      };
+    }
+
+    const matrixDetected = detectStoreSkuMatrixSheet(data);
+    if (matrixDetected.isMatrix) {
+      const matrixRule = buildStoreMatrixRuleFromData(data);
+      return {
+        config: matrixRule.config,
+        guessedMappings: matrixRule.guessedMappings,
+        analysis: matrixRule.analysis,
+        confidence: matrixRule.confidence,
       };
     }
 
