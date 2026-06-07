@@ -1,7 +1,7 @@
 "use client";
 
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { useCallback, useMemo, useRef } from "react";
+import { memo, useCallback, useMemo, useRef } from "react";
 import type { OrderField, OrderRow, ValidationError } from "@/types";
 import { FIELD_LABELS, ORDER_FIELDS } from "@/types";
 import {
@@ -23,6 +23,103 @@ const ROW_NUM_WIDTH = 52;
 const ACTION_WIDTH = 56;
 const ROW_HEIGHT = 40;
 
+const OrderRowView = memo(function OrderRowView({
+  row,
+  rowIndex,
+  tableWidth,
+  errorFields,
+  hasRowError,
+  errorIndex,
+  onChange,
+  onDelete,
+  onKeyDown,
+}: {
+  row: OrderRow;
+  rowIndex: number;
+  tableWidth: number;
+  errorFields: Set<OrderField | "row">;
+  hasRowError: boolean;
+  errorIndex: Map<number, ValidationError[]>;
+  onChange: VirtualOrderTableProps["onChange"];
+  onDelete: VirtualOrderTableProps["onDelete"];
+  onKeyDown: (
+    e: React.KeyboardEvent,
+    rowIndex: number,
+    fieldIndex: number
+  ) => void;
+}) {
+  return (
+    <div
+      className={`absolute left-0 flex items-stretch border-b border-[var(--border)] ${
+        hasRowError
+          ? "bg-red-50/40 border-l-[3px] border-l-red-400"
+          : "border-l-[3px] border-l-transparent hover:bg-[var(--row-hover)]"
+      }`}
+      style={{ width: tableWidth, height: ROW_HEIGHT }}
+    >
+      <div
+        className={`sticky left-0 z-20 shrink-0 flex items-center justify-center text-xs border-r border-[var(--border)] ${
+          hasRowError
+            ? "bg-red-50 text-red-600 font-medium"
+            : "bg-white text-[var(--text-muted)]"
+        }`}
+        style={{ width: ROW_NUM_WIDTH }}
+      >
+        {rowIndex + 1}
+      </div>
+
+      {ORDER_FIELDS.map((field, fi) => {
+        const hasError =
+          errorFields.has(field) ||
+          (errorFields.has("row") &&
+            ["storeName", "recipientName", "recipientPhone", "recipientAddress"].includes(
+              field
+            ));
+        const cellError = getCellErrorFromIndex(errorIndex, rowIndex, field);
+        const isTempLayer = field === "tempLayer";
+
+        return (
+          <div
+            key={field}
+            className="shrink-0 flex items-center px-0.5 border-r border-[var(--border)]/60"
+            style={{ width: COL_WIDTH }}
+          >
+            <input
+              data-cell={`${rowIndex}-${fi}`}
+              value={row[field]}
+              list={isTempLayer ? "temp-layer-options" : undefined}
+              title={cellError ? cellError : `点击编辑 ${FIELD_LABELS[field]}`}
+              placeholder="—"
+              onChange={(e) => onChange(rowIndex, field, e.target.value)}
+              onFocus={(e) => e.target.select()}
+              onKeyDown={(e) => onKeyDown(e, rowIndex, fi)}
+              className={`w-full h-8 px-1.5 text-xs rounded outline-none transition-all ${
+                hasError
+                  ? "border border-red-400 bg-red-50 text-red-800 ring-1 ring-red-200"
+                  : "border border-transparent focus:border-[var(--primary)] focus:bg-white focus:ring-2 focus:ring-[var(--primary)]/15 bg-transparent"
+              }`}
+            />
+          </div>
+        );
+      })}
+
+      <div
+        className="shrink-0 flex items-center justify-center"
+        style={{ width: ACTION_WIDTH }}
+      >
+        <button
+          type="button"
+          onClick={() => onDelete(rowIndex)}
+          className="text-xs text-red-400 hover:text-red-600 px-1"
+          title="删除此行"
+        >
+          删除
+        </button>
+      </div>
+    </div>
+  );
+});
+
 export function VirtualOrderTable({
   rows,
   errors,
@@ -41,7 +138,7 @@ export function VirtualOrderTable({
     count: rows.length,
     getScrollElement: () => parentRef.current,
     estimateSize: () => ROW_HEIGHT,
-    overscan: 8,
+    overscan: 5,
     getItemKey: (index) => rows[index]?.id ?? index,
   });
 
@@ -146,86 +243,26 @@ export function VirtualOrderTable({
               return (
                 <div
                   key={row.id}
-                  className={`absolute left-0 flex items-stretch border-b border-[var(--border)] ${
-                    hasRowError
-                      ? "bg-red-50/40 border-l-[3px] border-l-red-400"
-                      : "border-l-[3px] border-l-transparent hover:bg-[var(--row-hover)]"
-                  }`}
                   style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
                     width: tableWidth,
                     height: `${vItem.size}px`,
                     transform: `translateY(${vItem.start}px)`,
                   }}
                 >
-                  <div
-                    className={`sticky left-0 z-20 shrink-0 flex items-center justify-center text-xs border-r border-[var(--border)] ${
-                      hasRowError
-                        ? "bg-red-50 text-red-600 font-medium"
-                        : "bg-white text-[var(--text-muted)]"
-                    }`}
-                    style={{ width: ROW_NUM_WIDTH }}
-                  >
-                    {vItem.index + 1}
-                  </div>
-
-                  {ORDER_FIELDS.map((field, fi) => {
-                    const hasError =
-                      errorFields.has(field) ||
-                      (errorFields.has("row") &&
-                        ["storeName", "recipientName", "recipientPhone", "recipientAddress"].includes(field));
-                    const cellError = getCellErrorFromIndex(
-                      errorIndex,
-                      vItem.index,
-                      field
-                    );
-                    const isTempLayer = field === "tempLayer";
-
-                    return (
-                      <div
-                        key={field}
-                        className="shrink-0 flex items-center px-0.5 border-r border-[var(--border)]/60"
-                        style={{ width: COL_WIDTH }}
-                      >
-                        <input
-                          data-cell={`${vItem.index}-${fi}`}
-                          value={row[field]}
-                          list={isTempLayer ? "temp-layer-options" : undefined}
-                          title={
-                            cellError
-                              ? cellError
-                              : `点击编辑 ${FIELD_LABELS[field]}`
-                          }
-                          placeholder="—"
-                          onChange={(e) =>
-                            onChange(vItem.index, field, e.target.value)
-                          }
-                          onFocus={(e) => e.target.select()}
-                          onKeyDown={(e) =>
-                            handleKeyDown(e, vItem.index, fi)
-                          }
-                          className={`w-full h-8 px-1.5 text-xs rounded outline-none transition-all ${
-                            hasError
-                              ? "border border-red-400 bg-red-50 text-red-800 ring-1 ring-red-200"
-                              : "border border-transparent focus:border-[var(--primary)] focus:bg-white focus:ring-2 focus:ring-[var(--primary)]/15 bg-transparent"
-                          }`}
-                        />
-                      </div>
-                    );
-                  })}
-
-                  <div
-                    className="shrink-0 flex items-center justify-center"
-                    style={{ width: ACTION_WIDTH }}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => onDelete(vItem.index)}
-                      className="text-xs text-red-400 hover:text-red-600 px-1"
-                      title="删除此行"
-                    >
-                      删除
-                    </button>
-                  </div>
+                  <OrderRowView
+                    row={row}
+                    rowIndex={vItem.index}
+                    tableWidth={tableWidth}
+                    errorFields={errorFields}
+                    hasRowError={hasRowError}
+                    errorIndex={errorIndex}
+                    onChange={onChange}
+                    onDelete={onDelete}
+                    onKeyDown={handleKeyDown}
+                  />
                 </div>
               );
             })}

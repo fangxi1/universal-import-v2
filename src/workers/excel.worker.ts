@@ -10,7 +10,12 @@ function rowToStrings(row: unknown[]): string[] {
 self.onmessage = (event: MessageEvent<{ buffer: ArrayBuffer }>) => {
   try {
     const { buffer } = event.data;
-    const workbook = XLSX.read(buffer, { type: "array", cellDates: true });
+    const workbook = XLSX.read(buffer, {
+      type: "array",
+      cellDates: true,
+      cellNF: false,
+      cellStyles: false,
+    });
     if (!workbook.SheetNames.length) {
       self.postMessage({ ok: false, error: "Excel 文件中没有工作表" });
       return;

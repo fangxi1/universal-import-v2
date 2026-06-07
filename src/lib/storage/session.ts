@@ -28,8 +28,12 @@ const LARGE_DRAFT_ROWS = 500;
 export function persistPreviewDraft(rows: OrderRow[], meta: ImportMeta) {
   if (typeof window === "undefined") return;
   try {
-    sessionStorage.setItem(PREVIEW_KEY, JSON.stringify(rows));
     sessionStorage.setItem(META_KEY, JSON.stringify(meta));
+    if (rows.length <= LARGE_DRAFT_ROWS) {
+      sessionStorage.setItem(PREVIEW_KEY, JSON.stringify(rows));
+    } else {
+      sessionStorage.removeItem(PREVIEW_KEY);
+    }
   } catch {
     /* session 满 */
   }

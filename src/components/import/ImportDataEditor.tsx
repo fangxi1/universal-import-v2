@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useDeferredValue } from "react";
 import { useRouter } from "next/navigation";
 import { v4 as uuidv4 } from "uuid";
 import { Button, toast } from "@/components/ui/Button";
@@ -10,7 +10,6 @@ import { StickyActionBar } from "@/components/ui/StickyActionBar";
 import { PerfMetricsBanner } from "@/components/import/PerfMetricsBanner";
 import { SubmitResultPanel } from "@/components/import/SubmitResultPanel";
 import type { ImportPerfMetrics } from "@/lib/performance/timing";
-import { yieldToMain } from "@/lib/performance/timing";
 import { VirtualOrderTable } from "@/components/preview/VirtualOrderTable";
 import { ValidationPanel } from "@/components/preview/ValidationPanel";
 import { exportOrdersToExcel } from "@/lib/export/excel-export";
@@ -24,7 +23,9 @@ import {
 import type { OrderField, OrderRow, ParseProgress, SubmitResult } from "@/types";
 import { validatePreviewData } from "@/lib/validation/order-validator";
 
-const SUBMIT_CHUNK_SIZE = 10;
+const SUBMIT_CHUNK_SIZE = 500;
+const LARGE_ROW_COUNT = 500;
+const VALIDATION_ERROR_DISPLAY_LIMIT = 80;
 
 interface ImportDataEditorProps {
   initialRows: OrderRow[];
@@ -67,11 +68,29 @@ export function ImportDataEditor({
   onRenderMeasuredRef.current = onRenderMeasured;
 
   useEffect(() => {
-    fetch("/api/orders/check-duplicates")
-      .then((r) => r.json())
-      .then((j) => setDbCodes(j.existing ?? []))
-      .catch(() => {});
-  }, []);
+    const codes = [
+      ...new Set(
+        rows
+          .map((r) => r.externalCode?.trim())
+          .filter((c): c is string => Boolean(c))
+      ),
+    ];
+    if (!codes.length) {
+      setDbCodes([]);
+      return;
+    }
+    const timer = setTimeout(() => {
+      fetch("/api/orders/check-duplicates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ codes }),
+      })
+        .then((r) => r.json())
+        .then((j) => setDbCodes(j.existing ?? []))
+        .catch(() => {});
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [rows]);
 
   useEffect(() => {
     renderMeasuredRef.current = false;
@@ -97,12 +116,21 @@ export function ImportDataEditor({
   }, [initialRows]);
 
   useEffect(() => {
-    if (initialRows.length <= 500) return;
+    if (initialRows.length <= LARGE_ROW_COUNT) return;
     const idle =
       typeof requestIdleCallback !== "undefined"
         ? requestIdleCallback
-        : (cb: () => void) => setTimeout(cb, 500);
-    const id = idle(() => persistPreviewDraft(initialRows, meta));
+        : (cb: () => void) => setTimeout(cb, 2000);
+    const id = idle(() => {
+      try {
+        sessionStorage.setItem(
+          "universal-import-meta",
+          JSON.stringify(meta)
+        );
+      } catch {
+        /* skip heavy draft for large imports */
+      }
+    });
     return () => {
       if (typeof cancelIdleCallback !== "undefined" && typeof id === "number") {
         cancelIdleCallback(id);
@@ -110,10 +138,13 @@ export function ImportDataEditor({
     };
   }, [initialRows, meta]);
 
+  const deferredRows = useDeferredValue(rows);
+
   const errors = useMemo(
-    () => validatePreviewData(rows, dbCodes),
-    [rows, dbCodes]
+    () => validatePreviewData(deferredRows, dbCodes),
+    [deferredRows, dbCodes]
   );
+  const validating = deferredRows !== rows;
 
   const errorRowCount = useMemo(
     () => new Set(errors.map((e) => e.rowIndex)).size,
@@ -122,8 +153,17 @@ export function ImportDataEditor({
 
   const syncDraft = useCallback(
     (nextRows: OrderRow[], markDirty = true) => {
-      if (nextRows.length <= 500) {
+      if (nextRows.length <= LARGE_ROW_COUNT) {
         persistPreviewDraft(nextRows, meta);
+      } else {
+        try {
+          sessionStorage.setItem(
+            "universal-import-meta",
+            JSON.stringify(meta)
+          );
+        } catch {
+          /* skip */
+        }
       }
       if (markDirty) setDirty(true);
       setLastSavedAt(Date.now());
@@ -139,10 +179,12 @@ export function ImportDataEditor({
         next[index] = { ...next[index], [field]: value };
         if (persistTimer.current) clearTimeout(persistTimer.current);
         persistTimer.current = setTimeout(() => {
-          persistPreviewDraft(next, meta);
+          if (next.length <= LARGE_ROW_COUNT) {
+            persistPreviewDraft(next, meta);
+          }
           setDirty(true);
           setLastSavedAt(Date.now());
-        }, 400);
+        }, 600);
         return next;
       });
     },
@@ -224,7 +266,6 @@ export function ImportDataEditor({
 
     try {
       updateProgress(0, "正在提交下单...");
-      await yieldToMain();
 
       for (let offset = 0; offset < rows.length; offset += SUBMIT_CHUNK_SIZE) {
         const chunk = rows.slice(offset, offset + SUBMIT_CHUNK_SIZE);
@@ -234,7 +275,6 @@ export function ImportDataEditor({
           offset,
           `正在写入数据库 · ${offset + 1}-${completed}/${total} 条`
         );
-        await yieldToMain();
 
         const res = await fetch("/api/orders", {
           method: "POST",
@@ -267,7 +307,6 @@ export function ImportDataEditor({
         }
 
         updateProgress(completed, `已写入 ${completed}/${total} 条`);
-        await yieldToMain();
       }
 
       updateProgress(total, "提交完成");
@@ -378,7 +417,11 @@ export function ImportDataEditor({
       </div>
 
       <div ref={validationRef}>
-        <ValidationPanel errors={errors} />
+        <ValidationPanel
+          errors={errors}
+          displayLimit={VALIDATION_ERROR_DISPLAY_LIMIT}
+          pending={validating}
+        />
       </div>
 
       {submitting && (
@@ -470,7 +513,9 @@ export function ImportDataEditor({
             size="lg"
             onClick={handleSubmitOrder}
             loading={submitting}
-            disabled={errors.length > 0 || rows.length === 0 || submitting}
+            disabled={
+              errors.length > 0 || rows.length === 0 || submitting || validating
+            }
             className="min-w-[140px] w-full sm:w-auto flex-1 sm:flex-none"
           >
             提交下单

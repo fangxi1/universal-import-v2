@@ -126,31 +126,41 @@ export async function POST(req: NextRequest) {
 
     let chunkSuccess = 0;
     const errors: Array<{ rowIndex: number; message: string }> = [];
+    const DB_INSERT_BATCH = 500;
 
-    for (let i = 0; i < rows.length; i++) {
-      const row = rows[i];
+    const toInsert = rows.map((row) => ({
+      batchId: batch.id,
+      externalCode: row.externalCode || null,
+      storeName: row.storeName || null,
+      recipientName: row.recipientName || null,
+      recipientPhone: row.recipientPhone || null,
+      recipientAddress: row.recipientAddress || null,
+      skuCode: row.skuCode,
+      skuName: row.skuName,
+      skuQuantity: row.skuQuantity,
+      weight: row.weight || null,
+      tempLayer: row.tempLayer || null,
+      skuSpec: row.skuSpec || null,
+      remark: row.remark || null,
+    }));
+
+    for (let offset = 0; offset < toInsert.length; offset += DB_INSERT_BATCH) {
+      const slice = toInsert.slice(offset, offset + DB_INSERT_BATCH);
       try {
-        await db.insert(orders).values({
-          batchId: batch.id,
-          externalCode: row.externalCode || null,
-          storeName: row.storeName || null,
-          recipientName: row.recipientName || null,
-          recipientPhone: row.recipientPhone || null,
-          recipientAddress: row.recipientAddress || null,
-          skuCode: row.skuCode,
-          skuName: row.skuName,
-          skuQuantity: row.skuQuantity,
-          weight: row.weight || null,
-          tempLayer: row.tempLayer || null,
-          skuSpec: row.skuSpec || null,
-          remark: row.remark || null,
-        });
-        chunkSuccess++;
-      } catch (err) {
-        errors.push({
-          rowIndex: i,
-          message: err instanceof Error ? err.message : "写入失败",
-        });
+        await db.insert(orders).values(slice);
+        chunkSuccess += slice.length;
+      } catch {
+        for (let i = 0; i < slice.length; i++) {
+          try {
+            await db.insert(orders).values(slice[i]);
+            chunkSuccess++;
+          } catch (err) {
+            errors.push({
+              rowIndex: offset + i,
+              message: err instanceof Error ? err.message : "写入失败",
+            });
+          }
+        }
       }
     }
 

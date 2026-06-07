@@ -264,50 +264,7 @@ function applyStep(
       break;
     }
     case "matrixTranspose": {
-      const headerRow = state.rows[step.headerRow] ?? [];
-      const dataRows = state.rows.slice(step.dataStartRow);
-      const newRecords: Partial<Record<OrderField, string>>[] = [];
-      const skuCodeCol = step.skuCodeColumn ?? step.rowLabelColumn;
-      const skuNameCol = step.skuNameColumn ?? step.rowLabelColumn;
-
-      for (const row of dataRows) {
-        if (isEmptyRow(row)) continue;
-        const skuCode = trimCell(row[skuCodeCol]);
-        const skuName = trimCell(row[skuNameCol]);
-        if (!skuCode && !skuName) continue;
-
-        headerRow.forEach((colHeader, colIdx) => {
-          if (step.skipColumns?.includes(colIdx)) return;
-          if (colIdx === skuCodeCol || colIdx === skuNameCol) return;
-          if (
-            step.rowLabelColumn === colIdx &&
-            step.skuCodeColumn == null &&
-            step.skuNameColumn == null
-          ) {
-            return;
-          }
-
-          const header = trimCell(colHeader);
-          if (!header) return;
-          if (
-            step.skipHeaderPatterns?.some((p) => matchPattern(header, p))
-          ) {
-            return;
-          }
-
-          const qty = row[colIdx]?.trim();
-          if (!qty || qty === "0") return;
-
-          newRecords.push({
-            skuCode: skuCode || skuName,
-            skuName: skuName || skuCode,
-            skuQuantity: qty,
-            storeName: header,
-            ...step.staticFields,
-          });
-        });
-      }
-      state.records = newRecords;
+      state.records = buildMatrixTransposeRecords(state.rows, step);
       state.rows = [];
       break;
     }
@@ -728,31 +685,173 @@ function executeMultiSheetRule(
   return allRows;
 }
 
+function buildMatrixTransposeRecords(
+  rows: string[][],
+  step: Extract<RuleStep, { type: "matrixTranspose" }>
+): Partial<Record<OrderField, string>>[] {
+  const headerRow = rows[step.headerRow] ?? [];
+  const dataRows = rows.slice(step.dataStartRow);
+  const newRecords: Partial<Record<OrderField, string>>[] = [];
+  const skuCodeCol = step.skuCodeColumn ?? step.rowLabelColumn;
+  const skuNameCol = step.skuNameColumn ?? step.rowLabelColumn;
+
+  for (const row of dataRows) {
+    if (isEmptyRow(row)) continue;
+    const skuCode = trimCell(row[skuCodeCol]);
+    const skuName = trimCell(row[skuNameCol]);
+    if (!skuCode && !skuName) continue;
+
+    headerRow.forEach((colHeader, colIdx) => {
+      if (step.skipColumns?.includes(colIdx)) return;
+      if (colIdx === skuCodeCol || colIdx === skuNameCol) return;
+      if (
+        step.rowLabelColumn === colIdx &&
+        step.skuCodeColumn == null &&
+        step.skuNameColumn == null
+      ) {
+        return;
+      }
+
+      const header = trimCell(colHeader);
+      if (!header) return;
+      if (step.skipHeaderPatterns?.some((p) => matchPattern(header, p))) {
+        return;
+      }
+
+      const qty = row[colIdx]?.trim();
+      if (!qty || qty === "0") return;
+
+      newRecords.push({
+        skuCode: skuCode || skuName,
+        skuName: skuName || skuCode,
+        skuQuantity: qty,
+        storeName: header,
+        ...step.staticFields,
+      });
+    });
+  }
+
+  return newRecords;
+}
+
+async function applyMatrixTransposeAsync(
+  state: EngineState,
+  step: Extract<RuleStep, { type: "matrixTranspose" }>,
+  onRowProgress?: RowProgressReporter
+): Promise<void> {
+  const headerRow = state.rows[step.headerRow] ?? [];
+  const dataRows = state.rows.slice(step.dataStartRow);
+  const newRecords: Partial<Record<OrderField, string>>[] = [];
+  const skuCodeCol = step.skuCodeColumn ?? step.rowLabelColumn;
+  const skuNameCol = step.skuNameColumn ?? step.rowLabelColumn;
+  const YIELD_EVERY = 40;
+  const total = dataRows.length;
+
+  for (let rowIdx = 0; rowIdx < dataRows.length; rowIdx++) {
+    const row = dataRows[rowIdx];
+    if (isEmptyRow(row)) continue;
+    const skuCode = trimCell(row[skuCodeCol]);
+    const skuName = trimCell(row[skuNameCol]);
+    if (!skuCode && !skuName) continue;
+
+    headerRow.forEach((colHeader, colIdx) => {
+      if (step.skipColumns?.includes(colIdx)) return;
+      if (colIdx === skuCodeCol || colIdx === skuNameCol) return;
+      if (
+        step.rowLabelColumn === colIdx &&
+        step.skuCodeColumn == null &&
+        step.skuNameColumn == null
+      ) {
+        return;
+      }
+
+      const header = trimCell(colHeader);
+      if (!header) return;
+      if (step.skipHeaderPatterns?.some((p) => matchPattern(header, p))) {
+        return;
+      }
+
+      const qty = row[colIdx]?.trim();
+      if (!qty || qty === "0") return;
+
+      newRecords.push({
+        skuCode: skuCode || skuName,
+        skuName: skuName || skuCode,
+        skuQuantity: qty,
+        storeName: header,
+        ...step.staticFields,
+      });
+    });
+
+    if (rowIdx % YIELD_EVERY === 0 || rowIdx === total - 1) {
+      onRowProgress?.(rowIdx + 1, total);
+      if (rowIdx > 0 && rowIdx % YIELD_EVERY === 0) {
+        await yieldToMain();
+      }
+    }
+  }
+
+  state.records = newRecords;
+  state.rows = [];
+}
+
+function recordToOrderRow(rec: Partial<Record<OrderField, string>>): OrderRow | null {
+  if (
+    !rec.skuCode &&
+    !rec.skuName &&
+    !rec.skuQuantity &&
+    !rec.storeName &&
+    !rec.recipientName
+  ) {
+    return null;
+  }
+  return {
+    id: uuidv4(),
+    externalCode: rec.externalCode ?? "",
+    storeName: rec.storeName ?? "",
+    recipientName: rec.recipientName ?? "",
+    recipientPhone: rec.recipientPhone ?? "",
+    recipientAddress: rec.recipientAddress ?? "",
+    skuCode: rec.skuCode ?? "",
+    skuName: rec.skuName ?? "",
+    skuQuantity: rec.skuQuantity ?? "",
+    weight: rec.weight ?? "",
+    tempLayer: rec.tempLayer ?? "",
+    skuSpec: rec.skuSpec ?? "",
+    remark: rec.remark ?? "",
+  };
+}
+
 function recordsToRows(records: Partial<Record<OrderField, string>>[]): OrderRow[] {
-  return records
-    .map((rec) => ({
-      id: uuidv4(),
-      externalCode: rec.externalCode ?? "",
-      storeName: rec.storeName ?? "",
-      recipientName: rec.recipientName ?? "",
-      recipientPhone: rec.recipientPhone ?? "",
-      recipientAddress: rec.recipientAddress ?? "",
-      skuCode: rec.skuCode ?? "",
-      skuName: rec.skuName ?? "",
-      skuQuantity: rec.skuQuantity ?? "",
-      weight: rec.weight ?? "",
-      tempLayer: rec.tempLayer ?? "",
-      skuSpec: rec.skuSpec ?? "",
-      remark: rec.remark ?? "",
-    }))
-    .filter(
-      (r) =>
-        r.skuCode ||
-        r.skuName ||
-        r.skuQuantity ||
-        r.storeName ||
-        r.recipientName
-    );
+  const rows: OrderRow[] = [];
+  for (const rec of records) {
+    const row = recordToOrderRow(rec);
+    if (row) rows.push(row);
+  }
+  return rows;
+}
+
+async function recordsToRowsAsync(
+  records: Partial<Record<OrderField, string>>[],
+  onProgress?: RowProgressReporter
+): Promise<OrderRow[]> {
+  const rows: OrderRow[] = [];
+  const total = records.length;
+  const YIELD_EVERY = 150;
+
+  for (let i = 0; i < records.length; i++) {
+    const row = recordToOrderRow(records[i]);
+    if (row) rows.push(row);
+
+    if (i % YIELD_EVERY === 0 || i === total - 1) {
+      onProgress?.(i + 1, total);
+      if (i > 0 && i % YIELD_EVERY === 0) {
+        await yieldToMain();
+      }
+    }
+  }
+
+  return rows;
 }
 
 export async function executeRuleEngineAsync(
@@ -791,6 +890,11 @@ export async function executeRuleEngineAsync(
       await applyMapFieldsAsync(state, step, reportProgress);
     } else if (step.type === "mapFields") {
       applyStep(state, step, reportProgress);
+    } else if (
+      step.type === "matrixTranspose" &&
+      state.rows.slice(step.dataStartRow).length > 80
+    ) {
+      await applyMatrixTransposeAsync(state, step, reportProgress);
     } else {
       applyStep(state, step);
       reportProgress(
@@ -805,13 +909,32 @@ export async function executeRuleEngineAsync(
   }
 
   onProgress?.({
-    percent: 100,
+    percent: 95,
     current: state.records.length || estimatedRows,
     total: state.records.length || estimatedRows,
+    stage: "生成预览行...",
+  });
+
+  const rows = await recordsToRowsAsync(state.records, (current, total) => {
+    onProgress?.({
+      percent: Math.min(
+        100,
+        95 + Math.round((current / Math.max(total, 1)) * 5)
+      ),
+      current,
+      total,
+      stage: `生成预览行 · ${current}/${total}`,
+    });
+  });
+
+  onProgress?.({
+    percent: 100,
+    current: rows.length,
+    total: rows.length,
     stage: "解析完成",
   });
 
-  return recordsToRows(state.records);
+  return rows;
 }
 
 async function applyMapFieldsAsync(

@@ -4,7 +4,15 @@ import { useMemo, useState } from "react";
 import type { ValidationError } from "@/types";
 import { FIELD_LABELS } from "@/types";
 
-export function ValidationPanel({ errors }: { errors: ValidationError[] }) {
+export function ValidationPanel({
+  errors,
+  displayLimit = 80,
+  pending = false,
+}: {
+  errors: ValidationError[];
+  displayLimit?: number;
+  pending?: boolean;
+}) {
   const [expanded, setExpanded] = useState(true);
 
   const summary = useMemo(() => {
@@ -19,10 +27,13 @@ export function ValidationPanel({ errors }: { errors: ValidationError[] }) {
   if (!errors.length) {
     return (
       <div className="alert-success px-4 py-3 text-sm mb-4 animate-fade-in">
-        ✓ 所有数据校验通过，可以提交下单
+        {pending ? "正在校验数据…" : "✓ 所有数据校验通过，可以提交下单"}
       </div>
     );
   }
+
+  const visibleErrors = errors.slice(0, displayLimit);
+  const hiddenCount = errors.length - visibleErrors.length;
 
   const affectedRows = new Set(errors.map((e) => e.rowIndex)).size;
 
@@ -59,7 +70,7 @@ export function ValidationPanel({ errors }: { errors: ValidationError[] }) {
             ))}
           </div>
           <ul className="max-h-52 overflow-auto space-y-1.5 pr-1">
-            {errors.map((err, i) => (
+            {visibleErrors.map((err, i) => (
               <li
                 key={`${err.rowIndex}-${err.field}-${i}`}
                 className="text-xs text-red-700 flex gap-2 py-1 px-2 rounded bg-white/80"
@@ -75,6 +86,11 @@ export function ValidationPanel({ errors }: { errors: ValidationError[] }) {
                 <span>{err.message}</span>
               </li>
             ))}
+            {hiddenCount > 0 && (
+              <li className="text-xs text-red-600 px-2 py-1">
+                还有 {hiddenCount} 条错误未展示，请修正标红单元格
+              </li>
+            )}
           </ul>
         </div>
       )}

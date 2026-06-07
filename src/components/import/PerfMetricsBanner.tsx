@@ -56,7 +56,7 @@ export function PerfMetricsBanner({ metrics }: { metrics: ImportPerfMetrics }) {
         </div>
       </div>
       <p className="text-xs text-[var(--text-muted)] mt-2">
-        虚拟列表仅渲染可见行 · Excel 解析在 Web Worker 执行 · 不含 AI 时间
+        虚拟列表仅渲染可见行 · Excel 在 Web Worker 解析 · 提交采用批量写入（500 条/批） · 不含 AI 时间
       </p>
     </div>
   );

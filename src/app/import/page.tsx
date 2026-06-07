@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, startTransition } from "react";
 import { Button, toast } from "@/components/ui/Button";
 import { Card, PageHeader } from "@/components/ui/Card";
 import { ProgressBar } from "@/components/ui/ProgressBar";
@@ -348,9 +348,11 @@ export default function ImportPage() {
         parseMs: perfPartialRef.current.parseMs,
         rowCount: rows.length,
       });
-      setParsedRows(rows);
-      setImportMeta(meta);
-      setStep("edit");
+      startTransition(() => {
+        setParsedRows(rows);
+        setImportMeta(meta);
+        setStep("edit");
+      });
 
       toast.success(`解析完成 ${rows.length} 条（${elapsed}s），请手动修改后保存`);
     } catch (e) {

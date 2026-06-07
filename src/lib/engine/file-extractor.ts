@@ -15,7 +15,12 @@ export function getFileExtension(name: string): SupportedExt | null {
 
 export async function extractExcel(buffer: ArrayBuffer): Promise<FilePreviewData> {
   try {
-    const workbook = XLSX.read(buffer, { type: "array", cellDates: true });
+    const workbook = XLSX.read(buffer, {
+      type: "array",
+      cellDates: true,
+      cellNF: false,
+      cellStyles: false,
+    });
     if (!workbook.SheetNames.length) {
       throw new Error("Excel 文件中没有工作表");
     }
