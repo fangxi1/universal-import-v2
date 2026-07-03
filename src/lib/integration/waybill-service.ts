@@ -1,4 +1,4 @@
-import { eq, isNotNull, desc, sql } from "drizzle-orm";
+import { eq, desc, sql, inArray } from "drizzle-orm";
 import { db, ensureTables } from "@/lib/db";
 import { importBatches, orders } from "@/lib/db/schema";
 
@@ -84,28 +84,46 @@ export function aggregateOrderLines(lines: OrderRow[]): IntegrationWaybill | nul
 }
 
 async function fetchOrderLinesByCode(externalCode: string): Promise<OrderRow[]> {
+  const map = await fetchOrderLinesByCodes([externalCode]);
+  return map.get(externalCode) || [];
+}
+
+const orderLineSelect = {
+  id: orders.id,
+  batchId: orders.batchId,
+  externalCode: orders.externalCode,
+  storeName: orders.storeName,
+  recipientName: orders.recipientName,
+  recipientPhone: orders.recipientPhone,
+  recipientAddress: orders.recipientAddress,
+  skuCode: orders.skuCode,
+  skuName: orders.skuName,
+  skuQuantity: orders.skuQuantity,
+  weight: orders.weight,
+  tempLayer: orders.tempLayer,
+  createdAt: orders.createdAt,
+  fileName: importBatches.fileName,
+};
+
+async function fetchOrderLinesByCodes(codes: string[]): Promise<Map<string, OrderRow[]>> {
   await ensureTables();
-  return db
-    .select({
-      id: orders.id,
-      batchId: orders.batchId,
-      externalCode: orders.externalCode,
-      storeName: orders.storeName,
-      recipientName: orders.recipientName,
-      recipientPhone: orders.recipientPhone,
-      recipientAddress: orders.recipientAddress,
-      skuCode: orders.skuCode,
-      skuName: orders.skuName,
-      skuQuantity: orders.skuQuantity,
-      weight: orders.weight,
-      tempLayer: orders.tempLayer,
-      createdAt: orders.createdAt,
-      fileName: importBatches.fileName,
-    })
+  const map = new Map<string, OrderRow[]>();
+  if (!codes.length) return map;
+
+  const lines = await db
+    .select(orderLineSelect)
     .from(orders)
     .leftJoin(importBatches, eq(orders.batchId, importBatches.id))
-    .where(eq(orders.externalCode, externalCode))
+    .where(inArray(orders.externalCode, codes))
     .orderBy(desc(orders.createdAt));
+
+  for (const line of lines) {
+    if (!line.externalCode) continue;
+    const bucket = map.get(line.externalCode) || [];
+    bucket.push(line);
+    map.set(line.externalCode, bucket);
+  }
+  return map;
 }
 
 export async function getWaybillByCode(externalCode: string): Promise<IntegrationWaybill | null> {
@@ -121,35 +139,61 @@ export async function listWaybills(params: {
   await ensureTables();
   const page = Math.max(1, params.page ?? 1);
   const pageSize = Math.min(100, Math.max(1, params.pageSize ?? 20));
+  const offset = (page - 1) * pageSize;
 
-  const rows = await db
-    .select({
-      externalCode: orders.externalCode,
-      latestAt: sql<string>`max(${orders.createdAt})`,
-    })
-    .from(orders)
-    .where(isNotNull(orders.externalCode))
-    .groupBy(orders.externalCode)
-    .orderBy(desc(sql`max(${orders.createdAt})`));
+  const { neon } = await import("@neondatabase/serverless");
+  const { getConnectionString } = await import("@/lib/db");
+  const sqlClient = neon(getConnectionString());
 
-  let codes = rows
-    .map((r) => r.externalCode)
+  const [countRows, codeRows] = params.warehouseId
+    ? await Promise.all([
+        sqlClient`
+          SELECT COUNT(*)::int AS count FROM (
+            SELECT external_code FROM orders
+            WHERE external_code IS NOT NULL AND store_name = ${params.warehouseId}
+            GROUP BY external_code
+          ) AS grouped
+        `,
+        sqlClient`
+          SELECT external_code FROM (
+            SELECT external_code, MAX(created_at) AS latest_at
+            FROM orders
+            WHERE external_code IS NOT NULL AND store_name = ${params.warehouseId}
+            GROUP BY external_code
+            ORDER BY latest_at DESC
+            LIMIT ${pageSize} OFFSET ${offset}
+          ) AS page_codes
+        `,
+      ])
+    : await Promise.all([
+        sqlClient`
+          SELECT COUNT(*)::int AS count FROM (
+            SELECT external_code FROM orders
+            WHERE external_code IS NOT NULL
+            GROUP BY external_code
+          ) AS grouped
+        `,
+        sqlClient`
+          SELECT external_code FROM (
+            SELECT external_code, MAX(created_at) AS latest_at
+            FROM orders
+            WHERE external_code IS NOT NULL
+            GROUP BY external_code
+            ORDER BY latest_at DESC
+            LIMIT ${pageSize} OFFSET ${offset}
+          ) AS page_codes
+        `,
+      ]);
+
+  const total = Number((countRows[0] as { count: number } | undefined)?.count ?? 0);
+  const codes = (codeRows as Array<{ external_code: string }>)
+    .map((r) => r.external_code)
     .filter((c): c is string => !!c);
 
-  if (params.warehouseId) {
-    const filtered: string[] = [];
-    for (const code of codes) {
-      const lines = await fetchOrderLinesByCode(code);
-      if (lines[0]?.storeName === params.warehouseId) filtered.push(code);
-    }
-    codes = filtered;
-  }
-
-  const total = codes.length;
-  const slice = codes.slice((page - 1) * pageSize, page * pageSize);
+  const lineMap = await fetchOrderLinesByCodes(codes);
   const data: IntegrationWaybill[] = [];
-  for (const code of slice) {
-    const wb = await getWaybillByCode(code);
+  for (const code of codes) {
+    const wb = aggregateOrderLines(lineMap.get(code) || []);
     if (wb) data.push(wb);
   }
 
