@@ -172,6 +172,8 @@ async function ensureTablesOnce() {
   `;
   await sql`CREATE INDEX IF NOT EXISTS idx_import_tasks_status_created ON import_tasks(status, created_at)`;
   await sql`CREATE INDEX IF NOT EXISTS idx_import_tasks_trace ON import_tasks(trace_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_import_tasks_file_name ON import_tasks(file_name)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_import_tasks_created_at ON import_tasks(created_at DESC)`;
 
   await sql`
     CREATE TABLE IF NOT EXISTS import_task_files (

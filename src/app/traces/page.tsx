@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { Card, PageHeader } from "@/components/ui/Card";
@@ -55,55 +55,75 @@ export default function TracesPage() {
   const [errors, setErrors] = useState<TraceError[]>([]);
   const [activeTrace, setActiveTrace] = useState<string>("");
   const [loading, setLoading] = useState(false);
+  const [timelineLoading, setTimelineLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [selectedError, setSelectedError] = useState<TraceError | null>(null);
+  const initialDone = useRef(false);
+
+  const loadTimeline = useCallback(
+    async (tid: string, task?: string) => {
+      setTimelineLoading(true);
+      try {
+        const qs = new URLSearchParams();
+        if (task) qs.set("task_id", task);
+        if (batch) qs.set("batch", batch);
+        if (rowFrom) qs.set("row_from", rowFrom);
+        if (rowTo) qs.set("row_to", rowTo);
+        if (errorCode) qs.set("error_code", errorCode);
+        const res = await fetch(`/api/traces/${tid}?${qs}`, { cache: "no-store" });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error || "加载时间线失败");
+        setActiveTrace(json.trace_id);
+        setTimeline(json.timeline || []);
+        setErrors(json.errors || []);
+        setSelectedError(null);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "加载时间线失败");
+      } finally {
+        setTimelineLoading(false);
+      }
+    },
+    [batch, rowFrom, rowTo, errorCode]
+  );
 
   const search = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
       const qs = new URLSearchParams();
-      if (taskId) qs.set("task_id", taskId);
-      if (traceId) qs.set("trace_id", traceId);
-      if (fileName) qs.set("file_name", fileName);
+      if (taskId.trim()) qs.set("task_id", taskId.trim());
+      if (traceId.trim()) qs.set("trace_id", traceId.trim());
+      if (fileName.trim()) qs.set("file_name", fileName.trim());
       if (errorCode) qs.set("error_code", errorCode);
-      const res = await fetch(`/api/traces?${qs}`);
+
+      const res = await fetch(`/api/traces?${qs}`, { cache: "no-store" });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "搜索失败");
       const list = (json.data || []) as TaskHit[];
       setHits(list);
+
       const first = list[0];
       if (first) {
         await loadTimeline(first.trace_id, first.id);
-      } else if (traceId) {
-        await loadTimeline(traceId);
+      } else if (traceId.trim()) {
+        await loadTimeline(traceId.trim());
       } else {
         setTimeline([]);
         setErrors([]);
         setActiveTrace("");
       }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "搜索失败");
     } finally {
       setLoading(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [taskId, traceId, fileName, errorCode]);
+  }, [taskId, traceId, fileName, errorCode, loadTimeline]);
 
-  const loadTimeline = async (tid: string, task?: string) => {
-    const qs = new URLSearchParams();
-    if (task) qs.set("task_id", task);
-    if (batch) qs.set("batch", batch);
-    if (rowFrom) qs.set("row_from", rowFrom);
-    if (rowTo) qs.set("row_to", rowTo);
-    if (errorCode) qs.set("error_code", errorCode);
-    const res = await fetch(`/api/traces/${tid}?${qs}`);
-    const json = await res.json();
-    if (!res.ok) throw new Error(json.error || "加载时间线失败");
-    setActiveTrace(json.trace_id);
-    setTimeline(json.timeline || []);
-    setErrors(json.errors || []);
-    setSelectedError(null);
-  };
-
+  // 仅首次按 URL 参数加载；输入变化不会自动搜索
   useEffect(() => {
-    search();
+    if (initialDone.current) return;
+    initialDone.current = true;
+    void search();
   }, [search]);
 
   return (
@@ -120,36 +140,42 @@ export default function TracesPage() {
             placeholder="task_id"
             value={taskId}
             onChange={(e) => setTaskId(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && void search()}
           />
           <input
             className="rounded border border-[var(--border)] px-3 py-2 text-sm"
             placeholder="trace_id"
             value={traceId}
             onChange={(e) => setTraceId(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && void search()}
           />
           <input
             className="rounded border border-[var(--border)] px-3 py-2 text-sm"
-            placeholder="文件名"
+            placeholder="文件名（前缀）"
             value={fileName}
             onChange={(e) => setFileName(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && void search()}
           />
           <input
             className="rounded border border-[var(--border)] px-3 py-2 text-sm"
             placeholder="批次号"
             value={batch}
             onChange={(e) => setBatch(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && void search()}
           />
           <input
             className="rounded border border-[var(--border)] px-3 py-2 text-sm"
             placeholder="行号起"
             value={rowFrom}
             onChange={(e) => setRowFrom(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && void search()}
           />
           <input
             className="rounded border border-[var(--border)] px-3 py-2 text-sm"
             placeholder="行号止"
             value={rowTo}
             onChange={(e) => setRowTo(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && void search()}
           />
           <select
             className="rounded border border-[var(--border)] px-3 py-2 text-sm"
@@ -166,17 +192,21 @@ export default function TracesPage() {
             )}
           </select>
         </div>
-        <div className="mt-3">
-          <Button onClick={search} loading={loading}>
+        <div className="mt-3 flex items-center gap-3">
+          <Button onClick={() => void search()} loading={loading}>
             搜索
           </Button>
+          <span className="text-xs text-[var(--text-secondary)]">
+            输入后点击搜索（或回车），不会边输边查
+          </span>
         </div>
+        {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
       </Card>
 
       {loading && !hits.length ? (
-        <LoadingState />
+        <LoadingState message="搜索中..." />
       ) : (
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className={`grid gap-4 lg:grid-cols-2 ${loading ? "opacity-70" : ""}`}>
           <Card title="匹配任务">
             {!hits.length ? (
               <p className="text-sm text-[var(--text-secondary)]">无匹配结果</p>
@@ -186,7 +216,8 @@ export default function TracesPage() {
                   <li key={h.id} className="border-b border-[var(--border)]/50 pb-2">
                     <button
                       className="text-left w-full hover:text-[var(--primary)]"
-                      onClick={() => loadTimeline(h.trace_id, h.id)}
+                      onClick={() => void loadTimeline(h.trace_id, h.id)}
+                      disabled={timelineLoading}
                     >
                       <div className="font-medium">{h.file_name}</div>
                       <div className="font-mono text-xs text-[var(--text-secondary)]">
@@ -208,11 +239,18 @@ export default function TracesPage() {
             )}
           </Card>
 
-          <Card title={`时间线 ${activeTrace ? `· ${activeTrace}` : ""}`}>
+          <Card
+            title={`时间线 ${activeTrace ? `· ${activeTrace}` : ""}`}
+            extra={
+              timelineLoading ? (
+                <span className="text-xs text-[var(--text-secondary)]">加载中…</span>
+              ) : null
+            }
+          >
             {!timeline.length ? (
               <p className="text-sm text-[var(--text-secondary)]">选择任务查看时间线</p>
             ) : (
-              <ol className="space-y-3 text-sm">
+              <ol className="space-y-3 text-sm max-h-[420px] overflow-y-auto">
                 {timeline.map((ev) => (
                   <li key={ev.id} className="flex gap-3">
                     <div className="w-16 shrink-0 text-xs text-[var(--text-secondary)] tabular-nums">
@@ -283,7 +321,9 @@ export default function TracesPage() {
         {selectedError && (
           <div className="mt-4 rounded border border-[var(--border)] bg-[var(--bg-muted)] p-4 text-sm space-y-1">
             <div className="font-medium">失败节点详情</div>
-            <div>批次：{selectedError.batch_index} / {selectedError.unit_id}</div>
+            <div>
+              批次：{selectedError.batch_index} / {selectedError.unit_id}
+            </div>
             <div>行号：{selectedError.row_number}</div>
             <div>字段：{selectedError.field_name}</div>
             <div>脱敏原始值：{selectedError.raw_value}</div>
