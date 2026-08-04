@@ -72,26 +72,33 @@ function BarChart({
 export default function MonitorPage() {
   const [data, setData] = useState<MonitorSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (background = false) => {
+    if (background) setRefreshing(true);
     try {
-      const res = await fetch("/api/import-monitor/summary");
+      const res = await fetch("/api/import-monitor/summary", {
+        cache: "no-store",
+      });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "加载失败");
       setData(json);
       setError(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "加载失败");
+      // 后台刷新失败时保留旧数据
+      if (!background) setError(e instanceof Error ? e.message : "加载失败");
+    } finally {
+      setRefreshing(false);
     }
   }, []);
 
   useEffect(() => {
-    load();
-    const t = setInterval(load, 5000);
+    void load(false);
+    const t = setInterval(() => void load(true), 10000);
     return () => clearInterval(t);
   }, [load]);
 
-  if (!data && !error) return <LoadingState />;
+  if (!data && !error) return <LoadingState message="加载监控看板..." />;
 
   const alertClass =
     data?.queue.alert === "red"
@@ -105,12 +112,17 @@ export default function MonitorPage() {
       <PageHeader
         title="导入监控看板"
         subtitle="吞吐、队列积压、阶段耗时与错误分布（真实聚合）"
+        extra={
+          <span className="text-xs text-[var(--text-secondary)]">
+            {refreshing ? "刷新中…" : "每 10 秒自动刷新"}
+          </span>
+        }
       />
 
       {error && <p className="text-sm text-red-600">{error}</p>}
 
       {data && (
-        <>
+        <div className={refreshing ? "opacity-80 transition-opacity" : ""}>
           <div className={`rounded-lg border px-4 py-3 text-sm ${alertClass}`}>
             队列状态：积压 {data.queue.pending_rows} 行 /{" "}
             {data.queue.pending_batches} 批处理中{" "}
@@ -209,7 +221,7 @@ export default function MonitorPage() {
               />
             </Card>
           </div>
-        </>
+        </div>
       )}
     </div>
   );

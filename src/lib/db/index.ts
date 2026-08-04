@@ -203,6 +203,7 @@ async function ensureTablesOnce() {
     )
   `;
   await sql`CREATE INDEX IF NOT EXISTS idx_import_task_batches_status ON import_task_batches(status)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_import_task_batches_completed_at ON import_task_batches(completed_at)`;
 
   await sql`
     CREATE TABLE IF NOT EXISTS import_task_parsed_rows (
@@ -231,6 +232,7 @@ async function ensureTablesOnce() {
   `;
   await sql`CREATE INDEX IF NOT EXISTS idx_import_task_errors_task_unit ON import_task_errors(task_id, unit_id)`;
   await sql`CREATE INDEX IF NOT EXISTS idx_import_task_errors_code ON import_task_errors(error_code)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_import_task_errors_created_at ON import_task_errors(created_at)`;
 
   await sql`
     CREATE TABLE IF NOT EXISTS event_outbox (
@@ -268,6 +270,8 @@ async function ensureTablesOnce() {
     )
   `;
   await sql`CREATE INDEX IF NOT EXISTS idx_batch_perf_task_unit ON batch_performance_log(task_id, unit_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_batch_perf_created_at ON batch_performance_log(created_at)`;
+  await sql`CREATE INDEX IF NOT EXISTS idx_batch_perf_total_ms ON batch_performance_log(total_duration_ms DESC)`;
 
   await sql`
     CREATE TABLE IF NOT EXISTS trace_events (
