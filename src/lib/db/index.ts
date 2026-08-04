@@ -63,7 +63,20 @@ export function getSqlClient() {
   return neon(getConnectionString());
 }
 
+/** 进程内只跑一次建表/建索引，避免每次 API 请求都执行几十条 DDL */
+let ensureTablesPromise: Promise<void> | null = null;
+
 export async function ensureTables() {
+  if (!ensureTablesPromise) {
+    ensureTablesPromise = ensureTablesOnce().catch((err) => {
+      ensureTablesPromise = null;
+      throw err;
+    });
+  }
+  return ensureTablesPromise;
+}
+
+async function ensureTablesOnce() {
   assertDatabaseConfigured();
   const sql = getSqlClient();
 

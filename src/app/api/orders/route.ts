@@ -8,19 +8,31 @@ export async function GET(req: NextRequest) {
     await ensureTables();
     const { searchParams } = new URL(req.url);
     const page = Math.max(1, parseInt(searchParams.get("page") ?? "1", 10));
-    const pageSize = Math.min(50, Math.max(10, parseInt(searchParams.get("pageSize") ?? "20", 10)));
-    const externalCode = searchParams.get("externalCode") ?? "";
-    const recipientName = searchParams.get("recipientName") ?? "";
-    const fileName = searchParams.get("fileName") ?? "";
+    const pageSize = Math.min(
+      50,
+      Math.max(10, parseInt(searchParams.get("pageSize") ?? "20", 10))
+    );
+    const externalCode = (searchParams.get("externalCode") ?? "").trim();
+    const recipientName = (searchParams.get("recipientName") ?? "").trim();
+    const fileName = (searchParams.get("fileName") ?? "").trim();
     const startDate = searchParams.get("startDate");
     const endDate = searchParams.get("endDate");
 
     const conditions = [];
+    // 短关键词用前缀匹配走索引；较长词保留包含模糊（%x%）
     if (externalCode) {
-      conditions.push(ilike(orders.externalCode, `%${externalCode}%`));
+      const pattern =
+        externalCode.length <= 2
+          ? `${externalCode}%`
+          : `%${externalCode}%`;
+      conditions.push(ilike(orders.externalCode, pattern));
     }
     if (recipientName) {
-      conditions.push(ilike(orders.recipientName, `%${recipientName}%`));
+      const pattern =
+        recipientName.length <= 1
+          ? `${recipientName}%`
+          : `%${recipientName}%`;
+      conditions.push(ilike(orders.recipientName, pattern));
     }
     if (fileName) {
       conditions.push(ilike(importBatches.fileName, `%${fileName}%`));
@@ -29,19 +41,28 @@ export async function GET(req: NextRequest) {
       conditions.push(sql`${orders.createdAt} >= ${startDate}::timestamptz`);
     }
     if (endDate) {
-      conditions.push(sql`${orders.createdAt} <= (${endDate}::date + interval '1 day')`);
+      conditions.push(
+        sql`${orders.createdAt} <= (${endDate}::date + interval '1 day')`
+      );
     }
 
     const where = conditions.length ? and(...conditions) : undefined;
     const offset = (page - 1) * pageSize;
+    const needsBatchJoin = Boolean(fileName);
 
-    const [countResult] = await db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(orders)
-      .leftJoin(importBatches, eq(orders.batchId, importBatches.id))
-      .where(where);
+    // count 与列表并行；无文件名筛选时 count 不 join，减少开销
+    const countPromise = needsBatchJoin
+      ? db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(orders)
+          .leftJoin(importBatches, eq(orders.batchId, importBatches.id))
+          .where(where)
+      : db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(orders)
+          .where(where);
 
-    const rows = await db
+    const rowsPromise = db
       .select({
         id: orders.id,
         batchId: orders.batchId,
@@ -67,12 +88,14 @@ export async function GET(req: NextRequest) {
       .limit(pageSize)
       .offset(offset);
 
+    const [countRows, rows] = await Promise.all([countPromise, rowsPromise]);
+
     return NextResponse.json({
       data: rows.map((r) => ({
         ...r,
         createdAt: r.createdAt?.toISOString(),
       })),
-      total: countResult?.count ?? 0,
+      total: countRows[0]?.count ?? 0,
       page,
       pageSize,
     });

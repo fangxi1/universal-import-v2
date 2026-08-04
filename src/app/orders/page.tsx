@@ -69,8 +69,7 @@ export default function OrdersPage() {
       setTotal(json.total ?? 0);
     } catch (e) {
       setError(e instanceof Error ? e.message : "查询失败");
-      setData([]);
-      setTotal(0);
+      // 保留上次结果，避免搜索失败时整页空白闪烁
     } finally {
       setLoading(false);
     }
@@ -208,7 +207,7 @@ export default function OrdersPage() {
           </div>
         )}
 
-        {loading ? (
+        {loading && data.length === 0 ? (
           <LoadingState message="加载运单列表..." />
         ) : data.length === 0 ? (
           <EmptyState
@@ -229,7 +228,14 @@ export default function OrdersPage() {
             }
           />
         ) : (
-          <div className="table-scroll">
+          <div className={`table-scroll relative ${loading ? "opacity-60" : ""}`}>
+            {loading && (
+              <div className="absolute inset-0 z-10 flex items-start justify-center pt-10 pointer-events-none">
+                <span className="rounded-full bg-white/90 px-3 py-1.5 text-xs text-[var(--primary)] shadow border border-[var(--border)]">
+                  搜索中…
+                </span>
+              </div>
+            )}
             <table className="data-table">
               <thead>
                 <tr>
@@ -287,7 +293,7 @@ export default function OrdersPage() {
           </div>
         )}
 
-        {!loading && total > 0 && (
+        {total > 0 && (
           <Pagination
             page={page}
             pageSize={pageSize}
