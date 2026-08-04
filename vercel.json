@@ -3,5 +3,15 @@
   "buildCommand": "npm run build",
   "devCommand": "npm run dev",
   "installCommand": "npm install",
-  "regions": ["hkg1"]
+  "regions": ["hkg1"],
+  "crons": [
+    {
+      "path": "/api/cron/outbox-dispatch",
+      "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/stale-batches",
+      "schedule": "*/5 * * * *"
+    }
+  ]
 }

@@ -9,6 +9,7 @@
 - **多格式支持**：Excel (.xlsx/.xls)、Word (.docx)、PDF
 - **数据预览**：虚拟列表渲染 1000+ 条数据，类 Excel 在线编辑
 - **校验与提交**：A/B 组收货信息校验、电话格式、重复检测、批量提交到数据库
+- **异步事件驱动导入**：上传即返回 `task_id`，Transactional Outbox + Worker 分批校验/入库，任务进度 / 监控看板 / Trace 检索
 
 ## 技术栈
 
@@ -35,6 +36,42 @@ npm run dev
 | `LLM_API_KEY` | 大模型 API Key（DeepSeek / OpenAI 等） |
 | `LLM_BASE_URL` | API 地址，默认 `https://api.deepseek.com/v1` |
 | `LLM_MODEL` | 模型名称，默认 `deepseek-chat` |
+| `CRON_SECRET` | Cron / 本地 Worker 鉴权 |
+| `IMPORT_BATCH_SIZE` | 处理单元行数，默认 1000 |
+| `IMPORT_WORKER_CONCURRENCY` | Dispatcher 并发，默认 3 |
+| `SKU_VALIDATE_TIMEOUT_MS` | SKU 校验超时（降级阈值），默认 3000 |
+| `QSTASH_TOKEN` | 可选；配置后 Outbox 经 QStash 投递 Worker |
+| `NEXT_PUBLIC_APP_URL` | 本服务对外 URL（Worker 回调） |
+
+## 异步导入（考点 V4）
+
+入口页面：`/tasks`（创建任务）、`/tasks/[taskId]`（进度与错误）、`/monitor`（监控）、`/traces`（Trace）。
+
+```bash
+# 1. 初始化表（或访问 /api/init-db）
+# 2. 导入预设规则（/rules → 导入预设规则），记下「标准表格+尾部收货信息」的 ruleId
+# 3. 灌入 20,000 SKU + 生成 10,000 行压测 Excel
+npm run seed:perf
+
+# 4. 启动服务后压测
+RULE_ID=<uuid> npm run load:import
+
+# 5. 自动化关键用例
+npm run test:async-import
+# 完整 HTTP 用例：BASE_URL=http://localhost:3000 RULE_ID=<uuid> npm run test:async-import
+```
+
+文档：
+
+- [重构假设说明](docs/REFACTOR_ASSUMPTIONS.md)
+- [异步导入 API](docs/ASYNC_IMPORT_API.md)
+- [压测报告模板](docs/LOAD_TEST_REPORT.md)
+
+故障模拟：
+
+- 停库或拖慢 `sku_master` → 任务详情出现 SKU 降级横幅
+- 杀死处理中的请求 → `/api/cron/stale-batches` 恢复卡死批次
+- 重复投递同一 `unit_id` → 不重复入库、不重复累计进度
 
 ## 部署到 Vercel
 
@@ -55,10 +92,11 @@ npm run dev
 
 ```
 src/
-├── app/           # 页面与 API 路由
+├── app/           # 页面与 API 路由（含 import-tasks / workers / cron / monitor）
 ├── components/    # UI 组件
 ├── lib/
 │   ├── ai/        # LLM 客户端
+│   ├── async/     # Outbox / Queue / Worker / 批量校验
 │   ├── db/        # 数据库
 │   ├── engine/    # 规则引擎 + 文件提取
 │   ├── export/    # Excel 导出

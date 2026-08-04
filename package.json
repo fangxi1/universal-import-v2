@@ -16,6 +16,9 @@
     "test:demos": "npx --yes tsx scripts/verify-demos.ts",
     "test:pdf": "npx --yes tsx scripts/test-pdf-rule.ts",
     "test:perf": "npx --yes tsx scripts/benchmark-perf.ts",
+    "test:async-import": "npx --yes tsx scripts/test-async-import.ts",
+    "seed:perf": "npx --yes tsx scripts/seed-data.ts",
+    "load:import": "npx --yes tsx scripts/load-test-import.ts",
     "benchmark:excel": "npx --yes tsx scripts/generate-benchmark-1000.ts"
   },
   "dependencies": {
