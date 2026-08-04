@@ -41,7 +41,8 @@ export default function TasksPage() {
   const [error, setError] = useState<string | null>(null);
 
   const loadRules = useCallback(async () => {
-    const rRes = await fetch("/api/rules");
+    // summary=1：只取 id/name，避免下载完整规则 config
+    const rRes = await fetch("/api/rules?summary=1");
     const rJson = await rRes.json();
     if (!rRes.ok) throw new Error(rJson.error || "加载规则失败");
     const list = (Array.isArray(rJson) ? rJson : rJson.data || []) as RuleItem[];

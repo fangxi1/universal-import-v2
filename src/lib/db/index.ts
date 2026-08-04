@@ -90,6 +90,7 @@ async function ensureTablesOnce() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `;
+  await sql`CREATE INDEX IF NOT EXISTS idx_parse_rules_updated_at ON parse_rules(updated_at DESC)`;
   await sql`
     CREATE TABLE IF NOT EXISTS import_batches (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
