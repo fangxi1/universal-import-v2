@@ -91,15 +91,15 @@ export async function GET(req: NextRequest) {
     }
 
     const [countRows, rows] = await Promise.all([
-      sql`SELECT COUNT(*)::int AS cnt FROM import_tasks` as Promise<
-        Array<{ cnt: number }>
-      >,
+      sql`SELECT COUNT(*)::int AS cnt FROM import_tasks`,
       rowsPromise,
     ]);
+    const total =
+      (countRows as Array<{ cnt: number }>)[0]?.cnt ?? 0;
 
     return NextResponse.json({
       data: rows,
-      total: countRows[0]?.cnt ?? 0,
+      total,
       page,
       pageSize,
     });
