@@ -35,37 +35,60 @@ export default function TasksPage() {
   const [rules, setRules] = useState<RuleItem[]>([]);
   const [ruleId, setRuleId] = useState("");
   const [file, setFile] = useState<File | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const loadRules = useCallback(async () => {
+    const rRes = await fetch("/api/rules");
+    const rJson = await rRes.json();
+    if (!rRes.ok) throw new Error(rJson.error || "加载规则失败");
+    const list = (Array.isArray(rJson) ? rJson : rJson.data || []) as RuleItem[];
+    setRules(list);
+    setRuleId((prev) => prev || list[0]?.id || "");
+  }, []);
+
+  const loadTasks = useCallback(async (opts?: { background?: boolean }) => {
+    const background = opts?.background ?? false;
+    if (background) setRefreshing(true);
+    else setInitialLoading(true);
     setError(null);
     try {
-      const [tRes, rRes] = await Promise.all([
-        fetch("/api/import-tasks?pageSize=30"),
-        fetch("/api/rules"),
-      ]);
+      const tRes = await fetch("/api/import-tasks?pageSize=30");
       const tJson = await tRes.json();
-      const rJson = await rRes.json();
       if (!tRes.ok) throw new Error(tJson.error || "加载任务失败");
       setTasks(tJson.data || []);
-      const list = (Array.isArray(rJson) ? rJson : rJson.data || []) as RuleItem[];
-      setRules(list);
-      if (!ruleId && list[0]?.id) setRuleId(list[0].id);
     } catch (e) {
       setError(e instanceof Error ? e.message : "加载失败");
     } finally {
-      setLoading(false);
+      setInitialLoading(false);
+      setRefreshing(false);
     }
-  }, [ruleId]);
+  }, []);
 
   useEffect(() => {
-    load();
-    const timer = setInterval(load, 5000);
-    return () => clearInterval(timer);
-  }, [load]);
+    let cancelled = false;
+    (async () => {
+      try {
+        await Promise.all([loadRules(), loadTasks()]);
+      } catch (e) {
+        if (!cancelled) {
+          setError(e instanceof Error ? e.message : "加载失败");
+          setInitialLoading(false);
+        }
+      }
+    })();
+
+    const timer = setInterval(() => {
+      void loadTasks({ background: true });
+    }, 8000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [loadRules, loadTasks]);
 
   const handleUpload = async () => {
     if (!file || !ruleId || uploading) return;
@@ -111,21 +134,47 @@ export default function TasksPage() {
               ))}
             </select>
           </label>
-          <label className="block text-sm md:col-span-2">
+          <div className="block text-sm md:col-span-2">
             <span className="text-[var(--text-secondary)]">出库单文件</span>
             <input
               ref={fileRef}
               type="file"
               accept=".xlsx,.xls,.docx,.pdf"
-              className="mt-1 block w-full text-sm"
+              className="hidden"
               onChange={(e) => setFile(e.target.files?.[0] || null)}
             />
-          </label>
+            <div className="mt-1 flex flex-wrap items-center gap-3">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => fileRef.current?.click()}
+              >
+                选择文件
+              </Button>
+              <span className="text-sm text-[var(--text-secondary)] truncate max-w-[280px]">
+                {file ? file.name : "未选择任何文件"}
+              </span>
+              {file && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setFile(null);
+                    if (fileRef.current) fileRef.current.value = "";
+                  }}
+                >
+                  清除
+                </Button>
+              )}
+            </div>
+          </div>
         </div>
         <div className="mt-4 flex items-center gap-3">
           <Button
             onClick={handleUpload}
             disabled={!file || !ruleId || uploading}
+            loading={uploading}
           >
             {uploading ? "提交中…" : "上传并创建任务"}
           </Button>
@@ -135,15 +184,27 @@ export default function TasksPage() {
         </div>
       </Card>
 
-      <Card title="最近任务">
-        {loading && !tasks.length ? (
-          <LoadingState />
-        ) : error ? (
+      <Card
+        title="最近任务"
+        extra={
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => loadTasks({ background: true })}
+            loading={refreshing}
+          >
+            刷新
+          </Button>
+        }
+      >
+        {initialLoading && !tasks.length ? (
+          <LoadingState message="加载最近任务..." />
+        ) : error && !tasks.length ? (
           <p className="text-sm text-red-600">{error}</p>
         ) : !tasks.length ? (
           <EmptyState title="暂无异步任务" description="上传文件后将在此展示" />
         ) : (
-          <div className="overflow-x-auto">
+          <div className={`overflow-x-auto ${refreshing ? "opacity-70" : ""}`}>
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-[var(--border)] text-left text-[var(--text-secondary)]">

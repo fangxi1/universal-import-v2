@@ -67,13 +67,10 @@ export async function GET(req: NextRequest) {
       Math.max(1, parseInt(searchParams.get("pageSize") || "20", 10))
     );
     const offset = (page - 1) * pageSize;
+    const withTotal = searchParams.get("withTotal") === "1";
     const sql = getSqlClient();
 
-    const countRows = (await sql`
-      SELECT COUNT(*)::int AS cnt FROM import_tasks
-    `) as Array<{ cnt: number }>;
-
-    const rows = await sql`
+    const rowsPromise = sql`
       SELECT id, file_name, status, total_rows, processed_rows, success_rows,
              failed_rows, total_batches, completed_batches, trace_id, degraded,
              created_at, completed_at
@@ -81,6 +78,24 @@ export async function GET(req: NextRequest) {
       ORDER BY created_at DESC
       LIMIT ${pageSize} OFFSET ${offset}
     `;
+
+    // 最近任务列表默认不 COUNT(*)，减少一轮 DB 往返
+    if (!withTotal) {
+      const rows = await rowsPromise;
+      return NextResponse.json({
+        data: rows,
+        total: null,
+        page,
+        pageSize,
+      });
+    }
+
+    const [countRows, rows] = await Promise.all([
+      sql`SELECT COUNT(*)::int AS cnt FROM import_tasks` as Promise<
+        Array<{ cnt: number }>
+      >,
+      rowsPromise,
+    ]);
 
     return NextResponse.json({
       data: rows,
